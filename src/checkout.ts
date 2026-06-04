@@ -9,13 +9,16 @@ export type PrHeadInfo = {
 };
 
 export function getGhToken(): string {
+  const fromEnv = process.env.GITHUB_TOKEN?.trim();
+  if (fromEnv && fromEnv !== "ghp_your_token_here") return fromEnv;
+
   try {
-    return execSync("gh auth token", { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] })
-      .trim();
+    return execSync("gh auth token", {
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "pipe"],
+    }).trim();
   } catch {
-    const fromEnv = process.env.GITHUB_TOKEN?.trim();
-    if (fromEnv && fromEnv !== "ghp_your_token_here") return fromEnv;
-    throw new Error("Run gh auth login or set GITHUB_TOKEN");
+    throw new Error("Run gh auth login or set GITHUB_TOKEN in .env");
   }
 }
 
@@ -71,4 +74,36 @@ export function clonePrHead(input: {
   );
 
   return input.targetDir;
+}
+
+export function defaultReviewTargetDir(projectRoot: string): string {
+  return path.join(projectRoot, ".review-target");
+}
+
+export function isManagedReviewTarget(
+  targetDir: string,
+  projectRoot: string,
+): boolean {
+  const resolved = path.resolve(targetDir);
+  const managed = path.resolve(defaultReviewTargetDir(projectRoot));
+  return resolved === managed || resolved.startsWith(managed + path.sep);
+}
+
+export function shouldKeepReviewTarget(): boolean {
+  const v = process.env.KEEP_REVIEW_TARGET?.trim().toLowerCase();
+  return v === "1" || v === "true" || v === "yes";
+}
+
+export function cleanupReviewTarget(
+  targetDir: string,
+  onLog?: (message: string) => void,
+): boolean {
+  if (shouldKeepReviewTarget()) {
+    onLog?.(`Keeping clone at ${targetDir} (KEEP_REVIEW_TARGET)`);
+    return false;
+  }
+  if (!fs.existsSync(targetDir)) return false;
+  fs.rmSync(targetDir, { recursive: true, force: true, maxRetries: 3 });
+  onLog?.(`Removed clone ${targetDir}`);
+  return true;
 }

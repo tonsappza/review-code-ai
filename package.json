@@ -7,6 +7,8 @@
     "review": "tsx src/review-pr.ts",
     "review:local": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/local-review.ps1",
     "ui": "tsx src/local-ui-server.ts",
+    "webhook": "tsx src/github-app-server.ts",
+    "test": "node --import tsx --test test/**/*.test.ts",
     "build": "tsc --noEmit",
     "typecheck": "tsc --noEmit"
   },
@@ -17,6 +19,7 @@
     "@actions/core": "^1.11.1",
     "@actions/github": "^6.0.1",
     "@cursor/sdk": "^1.0.17",
+    "@octokit/auth-app": "^7.1.4",
     "@octokit/rest": "^21.1.1"
   },
   "devDependencies": {

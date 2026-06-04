@@ -34,6 +34,14 @@ inputs:
   target_repository:
     description: Repository to review as owner/repo (defaults to event repo)
     required: false
+  review_mode:
+    description: diff or explore (default explore)
+    required: false
+    default: explore
+  post_inline_comments:
+    description: Post inline review comments on the PR
+    required: false
+    default: "false"
 
 runs:
   using: composite
@@ -60,6 +68,8 @@ runs:
         CURSOR_API_KEY: ${{ inputs.cursor_api_key }}
         GITHUB_TOKEN: ${{ inputs.github_token }}
         REVIEW_MODEL: ${{ inputs.model }}
+        REVIEW_MODE: ${{ inputs.review_mode }}
+        POST_INLINE_COMMENTS: ${{ inputs.post_inline_comments }}
         PR_NUMBER: ${{ inputs.pr_number || github.event.pull_request.number }}
         TARGET_REPOSITORY: ${{ inputs.target_repository }}
         REPORTS_DIR: ${{ github.action_path }}/reports

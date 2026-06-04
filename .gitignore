@@ -2,5 +2,8 @@ node_modules/
 dist/
 .env
 .review-target/
+github-app.private-key.pem
+*.pem
+!public.pub
 *.log
 .DS_Store

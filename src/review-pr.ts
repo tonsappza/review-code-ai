@@ -2,29 +2,12 @@ import * as core from "@actions/core";
 import * as github from "@actions/github";
 import { config as loadDotenv } from "dotenv";
 import path from "node:path";
+import { parseBool, resolveReviewMode } from "./config.js";
+import { runReviewPipeline } from "./core/pipeline.js";
+import type { GithubFeedbackOptions } from "./github-feedback.js";
+import { resolveReportsDir } from "./report.js";
 
-// Load .env for local runs (no-op in CI if file missing)
 loadDotenv();
-import {
-  createOctokit,
-  fetchChangedFiles,
-  fetchPullRequest,
-  fetchPullRequestDiff,
-  formatReviewComment,
-  upsertReviewComment,
-} from "./github.js";
-import {
-  formatPrLinkComment,
-  resolveReportsDir,
-  saveReport,
-} from "./report.js";
-import { runAiReview } from "./review.js";
-
-function parseBool(value: string | undefined, defaultValue: boolean): boolean {
-  if (value === undefined || value.trim() === "") return defaultValue;
-  const v = value.trim().toLowerCase();
-  return v === "1" || v === "true" || v === "yes";
-}
 
 function resolvePullRequestNumber(): number {
   const fromEnv = process.env.PR_NUMBER?.trim();
@@ -66,12 +49,28 @@ function resolveTargetRepository(): string {
   return repoFull;
 }
 
+function resolveGithubFeedback(): GithubFeedbackOptions {
+  return {
+    postFull: parseBool(
+      core.getInput("post_pr_comment") || process.env.POST_PR_COMMENT,
+      false,
+    ),
+    postLink: parseBool(
+      core.getInput("post_pr_link") || process.env.POST_PR_LINK,
+      false,
+    ),
+    postInline: parseBool(
+      core.getInput("post_inline_comments") ||
+        process.env.POST_INLINE_COMMENTS,
+      false,
+    ),
+  };
+}
+
 async function main(): Promise<void> {
   const token =
     core.getInput("github_token") || process.env.GITHUB_TOKEN || "";
-  if (!token) {
-    throw new Error("GITHUB_TOKEN is required");
-  }
+  if (!token) throw new Error("GITHUB_TOKEN is required");
 
   const apiKey =
     core.getInput("cursor_api_key") || process.env.CURSOR_API_KEY || "";
@@ -82,35 +81,12 @@ async function main(): Promise<void> {
   }
 
   const model = core.getInput("model") || process.env.REVIEW_MODEL || undefined;
-  const repoFull = resolveTargetRepository();
-  const [owner, repo] = repoFull.split("/");
-  if (!owner || !repo) {
-    throw new Error(`Invalid repository: ${repoFull}`);
-  }
-
-  const postFullComment = parseBool(
-    core.getInput("post_pr_comment") || process.env.POST_PR_COMMENT,
-    false,
-  );
-  const postLinkOnly = parseBool(
-    core.getInput("post_pr_link") || process.env.POST_PR_LINK,
-    false,
+  const repository = resolveTargetRepository();
+  const mode = resolveReviewMode(
+    core.getInput("review_mode") || process.env.REVIEW_MODE,
   );
 
-  const number = resolvePullRequestNumber();
-  const octokit = createOctokit(token);
-
-  core.info(`Fetching PR #${number} in ${owner}/${repo}`);
-  const pr = await fetchPullRequest(octokit, { owner, repo, number });
-  const [diff, changedFiles] = await Promise.all([
-    fetchPullRequestDiff(octokit, { owner, repo, number }),
-    fetchChangedFiles(octokit, { owner, repo, number }),
-  ]);
-
-  core.info(
-    `Reviewing ${changedFiles.length} changed file(s), diff length ${diff.length}`,
-  );
-
+  const prNumber = resolvePullRequestNumber();
   const reviewCwd =
     process.env.REVIEW_CWD?.trim() ||
     process.env.GITHUB_WORKSPACE ||
@@ -119,45 +95,29 @@ async function main(): Promise<void> {
     core.getInput("reports_dir") || process.env.REPORTS_DIR,
   );
 
-  const { text } = await runAiReview({
-    ...pr,
-    diff,
-    changedFiles,
+  const githubFeedback = resolveGithubFeedback();
+  const incremental = parseBool(
+    core.getInput("incremental") || process.env.INCREMENTAL_REVIEW,
+    false,
+  );
+
+  const { meta } = await runReviewPipeline({
+    token,
+    repository,
+    prNumber,
     apiKey,
     model,
-    cwd: path.resolve(reviewCwd),
-  });
-
-  const meta = await saveReport({
+    mode,
+    reviewCwd: path.resolve(reviewCwd),
     reportsDir,
-    pr,
-    prUrl: pr.htmlUrl,
-    review: text,
-    model,
-    filesChanged: changedFiles.length,
+    githubFeedback,
+    incremental,
+    onLog: (msg) => core.info(msg),
   });
 
-  core.info(`Report saved: ${meta.path}`);
   core.setOutput("report_path", meta.path);
   core.setOutput("report_url", meta.reportUrl);
-
-  if (postFullComment) {
-    await upsertReviewComment(
-      octokit,
-      { owner, repo, number },
-      formatReviewComment(text),
-    );
-    core.info("Posted full AI review on the pull request");
-  } else if (postLinkOnly) {
-    await upsertReviewComment(
-      octokit,
-      { owner, repo, number },
-      formatPrLinkComment(meta),
-    );
-    core.info("Posted report link on the pull request");
-  } else {
-    core.info("Skipped PR comment (report only in hub repo)");
-  }
+  core.setOutput("verdict", meta.verdict);
 }
 
 main().catch((err: unknown) => {

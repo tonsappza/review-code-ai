@@ -1,74 +1,275 @@
 <!DOCTYPE html>
-<html lang="th">
+<html lang="th" data-theme="dark">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#09090b" id="meta-theme-color" />
     <title>review-code-ai — Local UI</title>
+    <script>
+      (function () {
+        var k = "rcai-theme";
+        var t = localStorage.getItem(k);
+        var d =
+          t === "light" || t === "dark"
+            ? t
+            : matchMedia("(prefers-color-scheme: light)").matches
+              ? "light"
+              : "dark";
+        document.documentElement.setAttribute("data-theme", d);
+      })();
+    </script>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700&family=JetBrains+Mono:wght@400;500&display=swap"
+      rel="stylesheet"
+    />
     <link rel="stylesheet" href="/app.css" />
   </head>
   <body>
-    <header>
-      <h1>review-code-ai</h1>
-      <p class="sub">ทดสอบ AI PR review แบบ local — report เก็บใน <code>reports/</code></p>
-      <div id="status-bar" class="status-bar"></div>
+    <header class="topbar">
+      <div class="topbar-inner">
+        <a class="topbar-brand" href="/">
+          <span class="brand-mark" aria-hidden="true">
+            <svg width="24" height="24" viewBox="0 0 28 28" fill="none">
+              <rect width="28" height="28" rx="8" fill="url(#logo-g)" />
+              <path
+                d="M8 18L12 10L16 16L20 8"
+                stroke="white"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              />
+              <defs>
+                <linearGradient id="logo-g" x1="0" y1="0" x2="28" y2="28">
+                  <stop stop-color="#8b5cf6" />
+                  <stop offset="1" stop-color="#3b82f6" />
+                </linearGradient>
+              </defs>
+            </svg>
+          </span>
+          <span class="topbar-title">review-code-ai</span>
+        </a>
+
+        <div id="status-bar" class="status-bar topbar-status" role="status"></div>
+
+        <div class="topbar-actions">
+          <button
+            type="button"
+            id="theme-toggle"
+            class="icon-btn"
+            aria-label="สลับธีม"
+            title="Light / Dark"
+          >
+            <svg class="icon-sun" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+              <circle cx="12" cy="12" r="4" />
+              <path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41" />
+            </svg>
+            <svg class="icon-moon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+              <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
+            </svg>
+          </button>
+        </div>
+      </div>
     </header>
 
-    <main class="layout">
-      <section class="panel">
-        <h2>รัน Review</h2>
-        <form id="review-form">
-          <label>
-            Repository <span class="hint">owner/repo</span>
-            <input
-              name="repository"
-              type="text"
-              placeholder="Tech-Merch/big-data-api"
-              required
-            />
-          </label>
-          <label>
-            PR number
-            <input name="prNumber" type="number" min="1" required />
-          </label>
-          <label>
-            Model
-            <input name="model" type="text" placeholder="composer-2.5" />
-          </label>
-          <label class="checkbox">
-            <input name="postPrLink" type="checkbox" />
-            โพสต์ลิงก์ report บน PR (POST_PR_LINK)
-          </label>
-          <button type="submit" id="run-btn">เริ่ม Review</button>
-        </form>
+    <div class="app" data-mobile-tab="review">
+      <aside class="panel-review" id="panel-review" data-panel="review">
+        <p class="panel-label mobile-only">รัน Review</p>
+        <section class="card glass">
+          <form id="review-form" class="form">
+            <div class="field">
+              <label class="label" for="repo-input">Repository</label>
+              <span class="label-hint">owner/repo</span>
+              <input
+                id="repo-input"
+                name="repository"
+                type="text"
+                placeholder="Tech-Merch/big-data-api"
+                required
+                autocomplete="off"
+              />
+            </div>
 
-        <div id="job-panel" class="job-panel hidden">
-          <div class="job-header">
-            <span id="job-status" class="badge">—</span>
-            <span id="job-id" class="muted"></span>
+            <div class="field-row">
+              <div class="field">
+                <label class="label" for="mode-select">Mode</label>
+                <select name="mode" id="mode-select">
+                  <option value="explore">explore</option>
+                  <option value="diff">diff</option>
+                </select>
+              </div>
+              <div class="field">
+                <label class="label" for="model-input">Model</label>
+                <input id="model-input" name="model" type="text" placeholder="composer-2.5" />
+              </div>
+            </div>
+
+            <div class="field pr-field">
+              <span class="label" id="pr-label">Pull request</span>
+              <div class="segmented" role="tablist" aria-labelledby="pr-label">
+                <button
+                  type="button"
+                  class="segmented-btn active"
+                  data-pr-mode="manual"
+                  role="tab"
+                  aria-selected="true"
+                  id="pr-mode-manual"
+                >
+                  ใส่เลข PR
+                </button>
+                <button
+                  type="button"
+                  class="segmented-btn"
+                  data-pr-mode="load"
+                  role="tab"
+                  aria-selected="false"
+                  id="pr-mode-load"
+                >
+                  โหลดจาก GitHub
+                </button>
+              </div>
+
+              <div id="pr-panel-manual" class="pr-panel" role="tabpanel">
+                <input
+                  id="pr-number-manual"
+                  name="prNumber"
+                  type="number"
+                  min="1"
+                  placeholder="เช่น 24"
+                  inputmode="numeric"
+                />
+                <p class="field-hint">ใส่เลข PR โดยตรง — ไม่ต้องโหลดรายการ</p>
+              </div>
+
+              <div id="pr-panel-load" class="pr-panel hidden" role="tabpanel" hidden>
+                <label class="label-sm" for="pr-state">สถานะ PR</label>
+                <select name="prState" id="pr-state">
+                  <option value="all" selected>ทั้งหมด</option>
+                  <option value="open">open</option>
+                  <option value="closed">closed</option>
+                </select>
+                <div class="row">
+                  <select name="prSelect" id="pr-select" aria-label="เลือก PR">
+                    <option value="">— กดโหลดก่อน —</option>
+                  </select>
+                  <button type="button" id="load-prs-btn" class="btn btn-ghost">โหลด</button>
+                </div>
+                <p id="pr-hint" class="field-hint"></p>
+              </div>
+            </div>
+
+            <details class="options-drawer" open>
+              <summary>ตัวเลือกเพิ่มเติม</summary>
+              <div class="options-body">
+                <label class="check">
+                  <input name="postPrLink" type="checkbox" />
+                  <span>โพสต์ลิงก์ report บน PR</span>
+                </label>
+                <label class="check">
+                  <input name="postInline" type="checkbox" />
+                  <span>Inline comments</span>
+                </label>
+                <label class="check">
+                  <input name="incremental" type="checkbox" />
+                  <span>Incremental review</span>
+                </label>
+              </div>
+            </details>
+
+            <button type="submit" id="run-btn" class="btn btn-primary">
+              <span class="btn-label">เริ่ม Review</span>
+            </button>
+          </form>
+
+          <div id="job-panel" class="job-panel hidden">
+            <div class="job-head">
+              <span id="job-status" class="status-chip">—</span>
+              <span id="job-id" class="job-id"></span>
+            </div>
+            <div class="terminal">
+              <div class="terminal-bar">
+                <span></span><span></span><span></span>
+                <span class="terminal-title">live log</span>
+              </div>
+              <pre id="job-log" class="log"></pre>
+            </div>
+            <a id="open-report" class="btn btn-ghost btn-sm hidden" href="#">เปิด report</a>
           </div>
-          <pre id="job-log" class="log"></pre>
-          <a id="open-report" class="btn-link hidden" href="#" target="_blank" rel="noopener"
-            >เปิด report</a
-          >
-        </div>
-      </section>
+        </section>
+      </aside>
 
-      <section class="panel panel-grow">
-        <div class="panel-head">
-          <h2>Reports</h2>
-          <input type="search" id="search" placeholder="ค้นหา..." />
+      <main class="panel-reports" id="panel-reports" data-panel="reports">
+        <div class="reports-toolbar">
+          <div class="reports-heading">
+            <h2>Reports</h2>
+            <p class="main-sub">ประวัติ review ใน hub</p>
+          </div>
+          <div class="search-wrap">
+            <svg class="search-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+              <circle cx="11" cy="11" r="7" />
+              <path d="M20 20L16 16" />
+            </svg>
+            <input type="search" id="search" placeholder="ค้นหา..." enterkeyhint="search" />
+          </div>
         </div>
-        <ul id="report-list" class="report-list"></ul>
-        <article id="report-view" class="report-view hidden">
-          <header class="report-view-head">
-            <h3 id="report-title"></h3>
-            <a id="report-pr-link" href="#" target="_blank" rel="noopener">PR</a>
-          </header>
-          <div id="report-body" class="markdown-body"></div>
-        </article>
-        <p id="report-empty" class="muted">เลือก report จากรายการ หรือรัน review ใหม่</p>
-      </section>
-    </main>
+
+        <div class="reports-layout" id="reports-layout">
+          <nav class="report-nav" aria-label="Report list">
+            <ul id="report-list" class="report-list"></ul>
+          </nav>
+
+          <div class="report-stage">
+            <button type="button" id="report-back" class="btn btn-ghost btn-sm report-back mobile-only hidden" aria-label="กลับไปรายการ">
+              ← รายการ
+            </button>
+
+            <article id="report-view" class="report-detail hidden">
+              <header class="detail-head">
+                <div class="detail-title-wrap">
+                  <h3 id="report-title"></h3>
+                  <span id="report-verdict" class="verdict"></span>
+                </div>
+                <div class="detail-actions">
+                  <select id="severity-filter" class="select-sm" aria-label="กรอง severity">
+                    <option value="">ทั้งหมด</option>
+                    <option value="critical">critical</option>
+                    <option value="major">major</option>
+                    <option value="minor">minor</option>
+                    <option value="suggestion">suggestion</option>
+                  </select>
+                  <a id="report-pr-link" class="btn btn-ghost btn-sm" href="#" target="_blank" rel="noopener">PR ↗</a>
+                </div>
+              </header>
+              <div id="findings-cards" class="findings-cards hidden"></div>
+              <div id="report-body" class="markdown-body prose"></div>
+            </article>
+
+            <div id="report-empty" class="empty-state">
+              <div class="empty-icon" aria-hidden="true">
+                <svg width="48" height="48" viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="1.5" opacity="0.4">
+                  <rect x="8" y="6" width="32" height="36" rx="4" />
+                  <path d="M16 18h16M16 26h12M16 34h8" />
+                </svg>
+              </div>
+              <p><strong>ยังไม่ได้เลือก report</strong></p>
+              <p class="empty-hint">เลือกจากรายการ หรือรัน review ใหม่</p>
+            </div>
+          </div>
+        </div>
+      </main>
+    </div>
+
+    <nav class="mobile-nav mobile-only" aria-label="สลับหน้า">
+      <button type="button" class="mobile-nav-btn active" data-tab="review" aria-current="page">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+        Review
+      </button>
+      <button type="button" class="mobile-nav-btn" data-tab="reports">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M16 13H8M16 17H8M10 9H8"/></svg>
+        Reports
+      </button>
+    </nav>
 
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
     <script src="/app.js"></script>

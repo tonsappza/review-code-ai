@@ -1,5 +1,5 @@
 {
-  "updatedAt": "2026-06-04T06:57:27.070Z",
+  "updatedAt": "2026-06-04T07:13:25.598Z",
   "reports": [
     {
       "id": "Tech-Merch-big-data-api-pr-24",
@@ -9,10 +9,18 @@
       "title": "Feature/dashboard task/KAN-55 — Bank Request Circumstance",
       "prUrl": "https://github.com/Tech-Merch/big-data-api/pull/24",
       "reportUrl": "https://github.com/tonsappza/review-code-ai/blob/master/reports/Tech-Merch/big-data-api/pr-24.md",
-      "reviewedAt": "2026-06-04T06:57:27.067Z",
-      "model": "composer-2.5",
+      "reviewedAt": "2026-06-04T07:13:25.595Z",
       "filesChanged": 5,
-      "path": "reports/Tech-Merch/big-data-api/pr-24.md"
+      "path": "reports/Tech-Merch/big-data-api/pr-24.md",
+      "jsonPath": "reports/Tech-Merch/big-data-api/pr-24.json",
+      "reviewMode": "diff",
+      "verdict": "pass",
+      "findingCounts": {
+        "critical": 0,
+        "major": 0,
+        "minor": 0,
+        "suggestion": 0
+      }
     },
     {
       "id": "peter-evans-repository-dispatch-pr-333",

@@ -1,5 +1,6 @@
 import fs from "node:fs/promises";
 import path from "node:path";
+import type { ParsedReview, ReviewMode, ReviewVerdict } from "./core/types.js";
 import type { PullRequestContext } from "./github.js";
 
 export type ReportMeta = {
@@ -14,6 +15,10 @@ export type ReportMeta = {
   model?: string;
   filesChanged: number;
   path: string;
+  jsonPath: string;
+  reviewMode: ReviewMode;
+  verdict: ReviewVerdict;
+  findingCounts: ParsedReview["counts"];
 };
 
 export type ReportsIndex = {
@@ -39,6 +44,14 @@ export function reportRelativePath(
   return path.join(owner, repo, `pr-${pr}.md`);
 }
 
+export function reportJsonRelativePath(
+  owner: string,
+  repo: string,
+  pr: number,
+): string {
+  return path.join(owner, repo, `pr-${pr}.json`);
+}
+
 export function resolveReportsDir(base?: string): string {
   const dir = base?.trim() || process.env.REPORTS_DIR?.trim() || "reports";
   return path.isAbsolute(dir) ? dir : path.resolve(process.cwd(), dir);
@@ -62,10 +75,14 @@ export function buildReportMarkdown(input: {
     reviewedAt: string;
     model?: string;
     filesChanged: number;
+    reviewMode: ReviewMode;
+    verdict: ReviewVerdict;
+    findingCounts: ParsedReview["counts"];
   };
   review: string;
 }): string {
   const id = reportId(input.meta.owner, input.meta.repo, input.meta.pr);
+  const c = input.meta.findingCounts;
   const frontmatter = [
     "---",
     `id: ${id}`,
@@ -77,10 +94,26 @@ export function buildReportMarkdown(input: {
     `reviewedAt: ${input.meta.reviewedAt}`,
     `model: ${input.meta.model ?? "composer-2.5"}`,
     `filesChanged: ${input.meta.filesChanged}`,
+    `reviewMode: ${input.meta.reviewMode}`,
+    `verdict: ${input.meta.verdict}`,
+    `findingsCritical: ${c.critical}`,
+    `findingsMajor: ${c.major}`,
+    `findingsMinor: ${c.minor}`,
+    `findingsSuggestion: ${c.suggestion}`,
     "---",
   ].join("\n");
 
-  return `${frontmatter}\n\n# AI Code Review\n\n**${input.meta.title}**\n\n- PR: [#${input.meta.pr}](${input.meta.prUrl})\n- Reviewed: ${input.meta.reviewedAt}\n- Files changed: ${input.meta.filesChanged}\n\n---\n\n${input.review.trim()}`;
+  const badges = [
+    input.meta.verdict === "pass"
+      ? "pass"
+      : input.meta.verdict === "warn"
+        ? "warn"
+        : "fail",
+    input.meta.reviewMode,
+    `C${c.critical} M${c.major} m${c.minor} s${c.suggestion}`,
+  ].join(" · ");
+
+  return `${frontmatter}\n\n# AI Code Review\n\n**${input.meta.title}**\n\n- PR: [#${input.meta.pr}](${input.meta.prUrl})\n- Reviewed: ${input.meta.reviewedAt}\n- Mode: \`${input.meta.reviewMode}\` | Verdict: **${input.meta.verdict}** (${badges})\n- Files changed: ${input.meta.filesChanged}\n\n---\n\n${input.review.trim()}`;
 }
 
 export async function saveReport(input: {
@@ -90,10 +123,19 @@ export async function saveReport(input: {
   review: string;
   model?: string;
   filesChanged: number;
+  mode: ReviewMode;
+  parsed: ParsedReview;
+  verdict: ReviewVerdict;
 }): Promise<ReportMeta> {
   const reportsDir = resolveReportsDir(input.reportsDir);
   const rel = reportRelativePath(input.pr.owner, input.pr.repo, input.pr.number);
+  const jsonRel = reportJsonRelativePath(
+    input.pr.owner,
+    input.pr.repo,
+    input.pr.number,
+  );
   const filePath = path.join(reportsDir, rel);
+  const jsonPath = path.join(reportsDir, jsonRel);
   const reviewedAt = new Date().toISOString();
 
   const meta: ReportMeta = {
@@ -108,6 +150,10 @@ export async function saveReport(input: {
     model: input.model,
     filesChanged: input.filesChanged,
     path: `reports/${rel.replace(/\\/g, "/")}`,
+    jsonPath: `reports/${jsonRel.replace(/\\/g, "/")}`,
+    reviewMode: input.mode,
+    verdict: input.verdict,
+    findingCounts: input.parsed.counts,
   };
 
   const markdown = buildReportMarkdown({
@@ -120,12 +166,24 @@ export async function saveReport(input: {
       reviewedAt: meta.reviewedAt,
       model: meta.model,
       filesChanged: meta.filesChanged,
+      reviewMode: meta.reviewMode,
+      verdict: meta.verdict,
+      findingCounts: meta.findingCounts,
     },
     review: input.review,
   });
 
+  const jsonPayload = {
+    meta,
+    summary: input.parsed.summary,
+    findings: input.parsed.findings,
+    counts: input.parsed.counts,
+    markdown: input.review,
+  };
+
   await fs.mkdir(path.dirname(filePath), { recursive: true });
   await fs.writeFile(filePath, markdown, "utf8");
+  await fs.writeFile(jsonPath, JSON.stringify(jsonPayload, null, 2) + "\n", "utf8");
   await updateReportsIndex(reportsDir, meta);
 
   return meta;
@@ -154,5 +212,7 @@ export async function updateReportsIndex(
 }
 
 export function formatPrLinkComment(meta: ReportMeta): string {
-  return `<!-- review-code-ai -->\n🤖 **AI review saved** in [review-code-ai](${meta.reportUrl})\n\n[Open full report →](${meta.reportUrl})`;
+  const c = meta.findingCounts;
+  const counts = `C${c.critical} M${c.major} m${c.minor}`;
+  return `<!-- review-code-ai -->\n🤖 **AI review** · \`${meta.verdict}\` · ${counts} · [full report](${meta.reportUrl})`;
 }

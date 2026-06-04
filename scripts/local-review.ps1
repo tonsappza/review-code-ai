@@ -72,4 +72,20 @@ if (-not $env:REPORTS_DIR) {
 }
 
 Write-Host ("Reviewing " + $env:GITHUB_REPOSITORY + " PR #" + $env:PR_NUMBER)
-npm run review
+$targetForCleanup = $env:REVIEW_CWD
+$managedTarget = Join-Path $Root ".review-target"
+try {
+    npm run review
+} finally {
+    $keep = $env:KEEP_REVIEW_TARGET
+    if ($keep -eq "1" -or $keep -eq "true" -or $keep -eq "yes") {
+        Write-Host "Keeping clone (KEEP_REVIEW_TARGET)"
+    } elseif ($targetForCleanup -and (Test-Path $targetForCleanup)) {
+        $resolved = (Resolve-Path $targetForCleanup).Path
+        $managedResolved = (Resolve-Path $managedTarget -ErrorAction SilentlyContinue)
+        if ($managedResolved -and $resolved -eq $managedResolved.Path) {
+            Remove-Item -Recurse -Force $targetForCleanup -ErrorAction SilentlyContinue
+            Write-Host "Removed clone $targetForCleanup"
+        }
+    }
+}

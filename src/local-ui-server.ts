@@ -1,29 +1,44 @@
 import { config as loadDotenv } from "dotenv";
-import { spawn } from "node:child_process";
 import fs from "node:fs";
 import http from "node:http";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
-import { clonePrHead, getGhToken } from "./checkout.js";
+import { getGhToken } from "./checkout.js";
+import { resolveReviewMode } from "./config.js";
+import { runHubReview, HUB_ROOT } from "./hub-review.js";
+import type { PullRequestState } from "./github.js";
+import { createOctokit, listPullRequestsResolved } from "./github.js";
 import { resolveReportsDir } from "./report.js";
 import type { ReportsIndex } from "./report.js";
+import type { FindingSeverity } from "./core/types.js";
 
 loadDotenv();
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const ROOT = path.resolve(__dirname, "..");
+const ROOT = HUB_ROOT;
 const UI_DIR = path.join(ROOT, "ui");
 const PORT = Number.parseInt(process.env.UI_PORT ?? "3847", 10);
 
 type JobStatus = "queued" | "running" | "done" | "error";
 
+type JobEvent =
+  | { type: "log"; line: string }
+  | {
+      type: "status";
+      status: JobStatus;
+      verdict?: string;
+      reportPath?: string;
+      reportUrl?: string;
+      error?: string;
+    };
+
 type Job = {
   id: string;
   status: JobStatus;
   logs: string[];
+  listeners: Set<(event: JobEvent) => void>;
   error?: string;
   reportPath?: string;
   reportUrl?: string;
+  verdict?: string;
   startedAt: string;
   finishedAt?: string;
 };
@@ -53,9 +68,28 @@ function safeReportPath(rel: string): string | null {
   return full;
 }
 
+function emitJob(job: Job, event: JobEvent): void {
+  for (const listener of job.listeners) {
+    listener(event);
+  }
+}
+
 function appendLog(job: Job, line: string): void {
   job.logs.push(line);
   if (job.logs.length > 500) job.logs.shift();
+  emitJob(job, { type: "log", line });
+}
+
+function setJobStatus(job: Job, status: JobStatus): void {
+  job.status = status;
+  emitJob(job, {
+    type: "status",
+    status,
+    verdict: job.verdict,
+    reportPath: job.reportPath,
+    reportUrl: job.reportUrl,
+    error: job.error,
+  });
 }
 
 async function runReviewJob(
@@ -64,78 +98,85 @@ async function runReviewJob(
     repository: string;
     prNumber: number;
     postPrLink: boolean;
+    postInline: boolean;
+    incremental: boolean;
     model?: string;
+    mode?: string;
   },
 ): Promise<void> {
-  job.status = "running";
-  const targetDir = path.join(ROOT, ".review-target");
-  const reportsDir = resolveReportsDir();
+  setJobStatus(job, "running");
 
   try {
-    appendLog(job, `Fetching PR #${input.prNumber} in ${input.repository}...`);
+    appendLog(job, `PR #${input.prNumber} · ${input.repository}`);
     const token = getGhToken();
 
-    appendLog(job, "Cloning PR head branch...");
-    clonePrHead({
+    const { meta } = await runHubReview({
       repository: input.repository,
       prNumber: input.prNumber,
-      targetDir,
+      token,
+      apiKey: process.env.CURSOR_API_KEY!,
+      model: input.model,
+      mode: resolveReviewMode(input.mode),
+      incremental: input.incremental,
+      githubFeedback: {
+        postLink: input.postPrLink,
+        postInline: input.postInline,
+      },
+      onLog: (msg) => appendLog(job, msg),
     });
 
-    appendLog(job, "Running Cursor AI review (1–5 min)...");
-
-    await new Promise<void>((resolve, reject) => {
-      const child = spawn("npm", ["run", "review"], {
-        cwd: ROOT,
-        env: {
-          ...process.env,
-          GITHUB_TOKEN: token,
-          GITHUB_REPOSITORY: input.repository,
-          TARGET_REPOSITORY: input.repository,
-          PR_NUMBER: String(input.prNumber),
-          REVIEW_CWD: targetDir,
-          REPORTS_DIR: reportsDir,
-          POST_PR_COMMENT: "false",
-          POST_PR_LINK: input.postPrLink ? "true" : "false",
-          REVIEW_MODEL: input.model ?? process.env.REVIEW_MODEL ?? "composer-2.5",
-        },
-        shell: true,
-      });
-
-      child.stdout?.on("data", (buf) => {
-        for (const line of buf.toString().split(/\r?\n/)) {
-          if (line.trim() && !line.startsWith("::set-output")) {
-            appendLog(job, line);
-          }
-        }
-      });
-      child.stderr?.on("data", (buf) => {
-        for (const line of buf.toString().split(/\r?\n/)) {
-          if (line.trim()) appendLog(job, `[stderr] ${line}`);
-        }
-      });
-      child.on("error", reject);
-      child.on("close", (code) => {
-        if (code === 0) resolve();
-        else reject(new Error(`Review exited with code ${code}`));
-      });
-    });
-
-    const [owner, repo] = input.repository.split("/");
-    const rel = `reports/${owner}/${repo}/pr-${input.prNumber}.md`;
-    const hub = process.env.REPORTS_HUB_REPO ?? "tonsappza/review-code-ai";
-    const branch = process.env.REPORTS_HUB_BRANCH ?? "master";
-
-    job.reportPath = rel;
-    job.reportUrl = `https://github.com/${hub}/blob/${branch}/${rel}`;
-    job.status = "done";
+    job.reportPath = meta.path;
+    job.reportUrl = meta.reportUrl;
+    job.verdict = meta.verdict;
     job.finishedAt = new Date().toISOString();
-    appendLog(job, `Done → ${rel}`);
+    appendLog(job, `Done · verdict=${meta.verdict}`);
+    setJobStatus(job, "done");
   } catch (err) {
-    job.status = "error";
     job.error = err instanceof Error ? err.message : String(err);
     job.finishedAt = new Date().toISOString();
     appendLog(job, `Error: ${job.error}`);
+    setJobStatus(job, "error");
+  }
+}
+
+function streamJobEvents(
+  req: http.IncomingMessage,
+  res: http.ServerResponse,
+  job: Job,
+): void {
+  res.writeHead(200, {
+    "Content-Type": "text/event-stream",
+    "Cache-Control": "no-cache",
+    Connection: "keep-alive",
+  });
+
+  const send = (event: JobEvent) => {
+    res.write(`data: ${JSON.stringify(event)}\n\n`);
+  };
+
+  for (const line of job.logs) {
+    send({ type: "log", line });
+  }
+  send({
+    type: "status",
+    status: job.status,
+    verdict: job.verdict,
+    reportPath: job.reportPath,
+    reportUrl: job.reportUrl,
+    error: job.error,
+  });
+
+  const listener = (event: JobEvent) => send(event);
+  job.listeners.add(listener);
+
+  req.on("close", () => {
+    job.listeners.delete(listener);
+    if (!res.writableEnded) res.end();
+  });
+
+  if (job.status === "done" || job.status === "error") {
+    job.listeners.delete(listener);
+    res.end();
   }
 }
 
@@ -159,6 +200,22 @@ function serveStatic(
   res.writeHead(200, { "Content-Type": types[ext] ?? "application/octet-stream" });
   res.end(fs.readFileSync(filePath));
   return true;
+}
+
+function loadReportPayload(mdPath: string) {
+  const raw = fs.readFileSync(mdPath, "utf8");
+  const markdown = raw.replace(/^---[\s\S]*?---\n*/, "");
+  const jsonPath = mdPath.replace(/\.md$/i, ".json");
+  if (fs.existsSync(jsonPath)) {
+    const data = JSON.parse(fs.readFileSync(jsonPath, "utf8")) as {
+      meta?: unknown;
+      summary?: string;
+      findings?: unknown[];
+      counts?: Record<FindingSeverity, number>;
+    };
+    return { markdown, raw, ...data };
+  }
+  return { markdown, raw, findings: [], counts: null };
 }
 
 const server = http.createServer(async (req, res) => {
@@ -187,7 +244,38 @@ const server = http.createServer(async (req, res) => {
         defaultRepository:
           process.env.TARGET_REPOSITORY ?? process.env.GITHUB_REPOSITORY ?? "",
         defaultPrNumber: process.env.PR_NUMBER ?? "",
+        defaultReviewMode: resolveReviewMode(),
         model: process.env.REVIEW_MODEL ?? "composer-2.5",
+      });
+      return;
+    }
+
+    if (req.method === "GET" && url.pathname === "/api/pulls") {
+      const repository = url.searchParams.get("repository")?.trim();
+      if (!repository || !repository.includes("/")) {
+        json(res, 400, { error: "repository query required (owner/repo)" });
+        return;
+      }
+      const stateParam = url.searchParams.get("state")?.trim() || "all";
+      const state = (["open", "closed", "all"].includes(stateParam)
+        ? stateParam
+        : "all") as PullRequestState;
+      const [owner, repo] = repository.split("/");
+      const token = getGhToken();
+      const { pulls, source } = await listPullRequestsResolved(
+        createOctokit(token),
+        { owner: owner!, repo: repo! },
+        { limit: 30, state },
+      );
+      json(res, 200, {
+        repository,
+        state,
+        pulls,
+        source,
+        hint:
+          pulls.length === 0
+            ? "ไม่พบ PR — ลอง state=closed หรือใส่เลข PR เอง"
+            : undefined,
       });
       return;
     }
@@ -214,9 +302,14 @@ const server = http.createServer(async (req, res) => {
         json(res, 404, { error: "report not found" });
         return;
       }
-      const raw = fs.readFileSync(full, "utf8");
-      const body = raw.replace(/^---[\s\S]*?---\n*/, "");
-      json(res, 200, { path: rel, markdown: body, raw });
+      const severity = url.searchParams.get("severity") as FindingSeverity | null;
+      const payload = loadReportPayload(full);
+      if (severity && Array.isArray(payload.findings)) {
+        payload.findings = (payload.findings as { severity: string }[]).filter(
+          (f) => f.severity === severity,
+        );
+      }
+      json(res, 200, { path: rel, ...payload });
       return;
     }
 
@@ -225,7 +318,10 @@ const server = http.createServer(async (req, res) => {
         repository?: string;
         prNumber?: number;
         postPrLink?: boolean;
+        postInline?: boolean;
+        incremental?: boolean;
         model?: string;
+        mode?: string;
       };
 
       const repository = body.repository?.trim();
@@ -248,18 +344,40 @@ const server = http.createServer(async (req, res) => {
         id,
         status: "queued",
         logs: [],
+        listeners: new Set(),
         startedAt: new Date().toISOString(),
       };
       jobs.set(id, job);
+      setJobStatus(job, "queued");
 
       void runReviewJob(job, {
         repository,
         prNumber,
         postPrLink: Boolean(body.postPrLink),
+        postInline: Boolean(body.postInline),
+        incremental: Boolean(body.incremental),
         model: body.model,
+        mode: body.mode,
       });
 
       json(res, 202, { jobId: id });
+      return;
+    }
+
+    if (
+      req.method === "GET" &&
+      url.pathname.startsWith("/api/jobs/") &&
+      url.pathname.endsWith("/stream")
+    ) {
+      const id = url.pathname
+        .slice("/api/jobs/".length)
+        .replace(/\/stream$/, "");
+      const job = jobs.get(id);
+      if (!job) {
+        json(res, 404, { error: "job not found" });
+        return;
+      }
+      streamJobEvents(req, res, job);
       return;
     }
 
@@ -270,7 +388,8 @@ const server = http.createServer(async (req, res) => {
         json(res, 404, { error: "job not found" });
         return;
       }
-      json(res, 200, job);
+      const { listeners: _l, ...publicJob } = job;
+      json(res, 200, publicJob);
       return;
     }
 
@@ -283,5 +402,6 @@ const server = http.createServer(async (req, res) => {
 });
 
 server.listen(PORT, "127.0.0.1", () => {
-  console.log(`\n  Local Review UI → http://127.0.0.1:${PORT}\n`);
+  console.log(`\n  Local Review UI → http://127.0.0.1:${PORT}`);
+  console.log(`  PR list: open + closed + merged (state=all)\n`);
 });

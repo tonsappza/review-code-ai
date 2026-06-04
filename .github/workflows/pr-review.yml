@@ -51,6 +51,7 @@ jobs:
           REPORTS_DIR: ${{ github.workspace }}/reports
           POST_PR_COMMENT: "false"
           POST_PR_LINK: ${{ github.event.inputs.post_pr_link || 'false' }}
+          REVIEW_MODE: explore
         run: npm run review
 
       - name: Commit report
