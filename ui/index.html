@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="th">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>review-code-ai — Local UI</title>
+    <link rel="stylesheet" href="/app.css" />
+  </head>
+  <body>
+    <header>
+      <h1>review-code-ai</h1>
+      <p class="sub">ทดสอบ AI PR review แบบ local — report เก็บใน <code>reports/</code></p>
+      <div id="status-bar" class="status-bar"></div>
+    </header>
+
+    <main class="layout">
+      <section class="panel">
+        <h2>รัน Review</h2>
+        <form id="review-form">
+          <label>
+            Repository <span class="hint">owner/repo</span>
+            <input
+              name="repository"
+              type="text"
+              placeholder="Tech-Merch/big-data-api"
+              required
+            />
+          </label>
+          <label>
+            PR number
+            <input name="prNumber" type="number" min="1" required />
+          </label>
+          <label>
+            Model
+            <input name="model" type="text" placeholder="composer-2.5" />
+          </label>
+          <label class="checkbox">
+            <input name="postPrLink" type="checkbox" />
+            โพสต์ลิงก์ report บน PR (POST_PR_LINK)
+          </label>
+          <button type="submit" id="run-btn">เริ่ม Review</button>
+        </form>
+
+        <div id="job-panel" class="job-panel hidden">
+          <div class="job-header">
+            <span id="job-status" class="badge">—</span>
+            <span id="job-id" class="muted"></span>
+          </div>
+          <pre id="job-log" class="log"></pre>
+          <a id="open-report" class="btn-link hidden" href="#" target="_blank" rel="noopener"
+            >เปิด report</a
+          >
+        </div>
+      </section>
+
+      <section class="panel panel-grow">
+        <div class="panel-head">
+          <h2>Reports</h2>
+          <input type="search" id="search" placeholder="ค้นหา..." />
+        </div>
+        <ul id="report-list" class="report-list"></ul>
+        <article id="report-view" class="report-view hidden">
+          <header class="report-view-head">
+            <h3 id="report-title"></h3>
+            <a id="report-pr-link" href="#" target="_blank" rel="noopener">PR</a>
+          </header>
+          <div id="report-body" class="markdown-body"></div>
+        </article>
+        <p id="report-empty" class="muted">เลือก report จากรายการ หรือรัน review ใหม่</p>
+      </section>
+    </main>
+
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <script src="/app.js"></script>
+  </body>
+</html>

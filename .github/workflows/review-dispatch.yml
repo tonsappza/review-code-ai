@@ -1,0 +1,63 @@
+# Review PRs from other repos — reports are saved in this repo under reports/
+name: Review external PR
+
+on:
+  repository_dispatch:
+    types: [review-pr]
+
+permissions:
+  contents: write
+  pull-requests: read
+
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout hub (review-code-ai)
+        uses: actions/checkout@v4
+        with:
+          path: hub
+          fetch-depth: 0
+
+      - name: Checkout target repository
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ github.event.client_payload.owner }}/${{ github.event.client_payload.repo }}
+          ref: ${{ github.event.client_payload.ref || 'HEAD' }}
+          path: target
+          fetch-depth: 0
+          token: ${{ secrets.REVIEW_GITHUB_TOKEN || secrets.GITHUB_TOKEN }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: hub/package-lock.json
+
+      - name: Install dependencies
+        working-directory: hub
+        run: npm ci
+
+      - name: Run AI review
+        working-directory: hub
+        env:
+          CURSOR_API_KEY: ${{ secrets.CURSOR_API_KEY }}
+          GITHUB_TOKEN: ${{ secrets.REVIEW_GITHUB_TOKEN || secrets.GITHUB_TOKEN }}
+          TARGET_REPOSITORY: ${{ github.event.client_payload.owner }}/${{ github.event.client_payload.repo }}
+          PR_NUMBER: ${{ github.event.client_payload.pr }}
+          REVIEW_CWD: ${{ github.workspace }}/target
+          REPORTS_DIR: ${{ github.workspace }}/hub/reports
+          POST_PR_COMMENT: "false"
+          POST_PR_LINK: ${{ github.event.client_payload.post_pr_link || 'true' }}
+        run: npm run review
+
+      - name: Commit report
+        working-directory: hub
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add reports/
+          git diff --staged --quiet || git commit -m "report: ${{ github.event.client_payload.owner }}/${{ github.event.client_payload.repo }}#${{ github.event.client_payload.pr }}"
+          git push

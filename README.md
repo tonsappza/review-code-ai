@@ -1,121 +1,153 @@
 # review-code-ai
 
-AI-powered **GitHub Pull Request** reviews using the [Cursor SDK](https://cursor.com/docs/sdk/typescript). When a PR opens or updates, a GitHub Action fetches the diff, runs a Cursor agent against your repo checkout, and posts (or updates) a single review comment on the PR.
+AI-powered **GitHub Pull Request** reviews using the [Cursor SDK](https://cursor.com/docs/sdk/typescript). Reviews are saved as **reports in this repo** under `reports/` — not as long comments on the PR (unless you opt in).
 
 ## Features
 
-- Automatic review on `pull_request` (opened, synchronize, reopened)
-- Manual re-run via **workflow_dispatch**
-- Updates the same bot comment on re-push (no comment spam)
-- Truncates very large diffs safely
+- Reports stored at `reports/{owner}/{repo}/pr-{n}.md` + `reports/index.json`
+- Dashboard: open [`reports/index.html`](reports/index.html) (GitHub Pages or local)
+- Review PRs from **other repos** via `repository_dispatch` — reports still land here
+- Optional short link comment on the target PR
 - Structured review: Summary, Findings (severity), Test plan
 
-## Quick start
+## Where to read reports
 
-### 1. Get a Cursor API key
+| Location | How |
+|----------|-----|
+| **This repo** | Browse [`reports/`](reports/) on GitHub |
+| **Dashboard** | `reports/index.html` + `index.json` |
+| **Per PR** | `reports/owner/repo/pr-42.md` |
 
-Create a key at [Cursor Dashboard → Integrations](https://cursor.com/dashboard/integrations).
+Example after a review:  
+`https://github.com/tonsappza/review-code-ai/tree/master/reports`
 
-### 2. Add repository secret
+## Quick start (this hub repo)
 
-In your GitHub repo: **Settings → Secrets and variables → Actions → New repository secret**
+### 1. Secrets
 
-| Name | Value |
-|------|--------|
-| `CURSOR_API_KEY` | Your `cursor_...` API key |
+| Secret | Purpose |
+|--------|---------|
+| `CURSOR_API_KEY` | Cursor API key |
+| `REVIEW_GITHUB_TOKEN` | (optional) PAT with `repo` scope to checkout & read PRs in **other** repos |
 
-### 3. Install the workflow
+### 2. PR in this repo
 
-**Option A — use this repo as a GitHub Action** (after you publish it to GitHub):
+Workflow `.github/workflows/pr-review.yml` runs on PRs here, writes a report, and commits it to `reports/`.
+
+### 3. PRs in other repos (central hub)
+
+In the **target repo**, add a thin workflow that dispatches to this repo:
 
 ```yaml
-# .github/workflows/ai-pr-review.yml
-name: AI PR Review
+# .github/workflows/trigger-ai-review.yml (in repo ที่ถูก review)
+name: Trigger AI review
 on:
   pull_request:
     types: [opened, synchronize, reopened]
 
-permissions:
-  contents: read
-  pull-requests: write
-  issues: write
-
 jobs:
-  review:
+  dispatch:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: peter-evans/repository-dispatch@v3
         with:
-          fetch-depth: 0
-
-      - uses: YOUR_ORG/review-code-ai@v1
-        with:
-          cursor_api_key: ${{ secrets.CURSOR_API_KEY }}
+          token: ${{ secrets.REVIEW_DISPATCH_TOKEN }}
+          repository: tonsappza/review-code-ai
+          event-type: review-pr
+          client-payload: |
+            {
+              "owner": "${{ github.repository_owner }}",
+              "repo": "${{ github.event.repository.name }}",
+              "pr": ${{ github.event.pull_request.number }},
+              "ref": "${{ github.event.pull_request.head.sha }}",
+              "post_pr_link": true
+            }
 ```
 
-**Option B — copy files into your repo**
+Create `REVIEW_DISPATCH_TOKEN` — a PAT that can trigger workflows on `tonsappza/review-code-ai`.
 
-Copy `.github/workflows/pr-review.yml` and the project root (`package.json`, `src/`, etc.), then push. The included workflow runs `npm run review` on each PR.
+This repo runs `.github/workflows/review-dispatch.yml`, saves the report under `reports/`, pushes to `master`, and optionally posts a **link only** on the target PR.
 
-### 4. Open a pull request
+```mermaid
+flowchart LR
+  PR[PR ใน repo B] --> D[dispatch]
+  D --> HUB[review-code-ai workflow]
+  HUB --> R[reports/owner/repo/pr-N.md]
+  HUB -. optional .-> L[ลิงก์สั้นบน PR B]
+```
 
-The workflow posts a comment titled **AI Code Review** on the PR.
+## Local development (real PR)
 
-## Local development
+ใช้ PR จริงจาก GitHub API — ไม่ต้องเปิด PR ใน repo นี้
+
+### 1. ตั้ง `.env`
+
+```env
+CURSOR_API_KEY=cursor_...
+TARGET_REPOSITORY=owner/repo
+PR_NUMBER=42
+POST_PR_COMMENT=false
+POST_PR_LINK=false
+```
+
+`GITHUB_TOKEN` ไม่ต้องใส่ถ้ามี `gh auth login` แล้ว (สคริปต์ใช้ `gh auth token` อัตโนมัติ)
+
+### 2. รัน
+
+```powershell
+npm run review:local
+```
+
+สคริปต์จะ clone branch ของ PR ไปที่ `.review-target/` แล้วรัน Cursor review → บันทึกที่ `reports/owner/repo/pr-N.md`
+
+### 3. ดูผล
+
+- เปิดไฟล์ markdown ใน `reports/`
+- หรือ `npx serve reports` แล้วเปิด `index.html`
+
+### Local UI (แนะนำสำหรับทดสอบ)
+
+```powershell
+npm run ui
+```
+
+เปิดเบราว์เซอร์ที่ **http://127.0.0.1:3847** — กรอก `owner/repo` + เลข PR กด Review ดู log สด และเปิด report ใน panel ขวา (อ่านค่าเริ่มต้นจาก `.env`)
+
+พอร์ตอื่น: `$env:UI_PORT="4000"; npm run ui`
+
+### รันแบบ manual
 
 ```bash
 npm install
 export CURSOR_API_KEY="cursor_..."
-export GITHUB_TOKEN="ghp_..."   # needs repo + pull_requests scope
+export GITHUB_TOKEN="$(gh auth token)"
 export GITHUB_REPOSITORY="owner/repo"
-
-# Review PR #42
-npx tsx src/review-pr.ts
-# Or with explicit PR number (GitHub Actions passes via env in CI)
+export PR_NUMBER="42"
+npm run review
 ```
-
-For local runs, set `GITHUB_REPOSITORY` and ensure the workspace is a git checkout of that repo. Use [gh](https://cli.github.com/) to export a token: `export GITHUB_TOKEN=$(gh auth token)`.
 
 ## Configuration
 
-| Input / env | Description |
-|-------------|-------------|
-| `CURSOR_API_KEY` | Required. Cursor API key |
-| `GITHUB_TOKEN` | Provided automatically in Actions |
-| `REVIEW_MODEL` | Model id (default: `composer-2.5`) |
-| `pr_number` | Workflow input for manual runs |
-
-## How it works
-
-```mermaid
-sequenceDiagram
-  participant GH as GitHub
-  participant WF as GitHub Action
-  participant SDK as Cursor SDK
-  participant Agent as Cursor Agent
-
-  GH->>WF: pull_request event
-  WF->>GH: Fetch PR diff + files
-  WF->>SDK: Agent.prompt(review instructions + diff)
-  SDK->>Agent: Local run (repo cwd)
-  Agent-->>SDK: Review markdown
-  SDK-->>WF: Result
-  WF->>GH: Create/update PR comment
-```
+| Env / input | Default | Meaning |
+|-------------|---------|---------|
+| `REPORTS_DIR` | `./reports` | Report output directory |
+| `POST_PR_COMMENT` | `false` | Post full review on PR |
+| `POST_PR_LINK` | `false` | Post link to report on PR |
+| `TARGET_REPOSITORY` | `GITHUB_REPOSITORY` | `owner/repo` to review |
+| `REVIEW_CWD` | workspace | Path for Cursor agent checkout |
+| `REPORTS_HUB_REPO` | `tonsappza/review-code-ai` | Used in report URLs |
 
 ## Permissions
 
-The workflow needs:
+**Hub workflows** need `contents: write` to commit reports.
 
-- `contents: read` — checkout
-- `pull-requests: write` — read PR metadata
-- `issues: write` — post PR comments
+**Dispatch token** needs access to trigger `review-code-ai` and (for `REVIEW_GITHUB_TOKEN`) read target repos.
 
-## Security notes
+## Security
 
-- Store `CURSOR_API_KEY` only in GitHub Secrets, never in the workflow file
-- The agent runs in **local** mode against the checked-out repo; diff content is sent to Cursor’s API
-- Use a team service account key for org-wide automation if needed
+- Keep `CURSOR_API_KEY` in GitHub Secrets only
+- Diff content is sent to Cursor’s API for inference
+- Reports are committed to this repo — avoid secrets in PR diffs
 
 ## License
 

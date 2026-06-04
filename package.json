@@ -5,6 +5,8 @@
   "type": "module",
   "scripts": {
     "review": "tsx src/review-pr.ts",
+    "review:local": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/local-review.ps1",
+    "ui": "tsx src/local-ui-server.ts",
     "build": "tsc --noEmit",
     "typecheck": "tsc --noEmit"
   },
@@ -19,6 +21,7 @@
   },
   "devDependencies": {
     "@types/node": "^22.15.3",
+    "dotenv": "^17.4.2",
     "tsx": "^4.19.4",
     "typescript": "^5.8.3"
   }

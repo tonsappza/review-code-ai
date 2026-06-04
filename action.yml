@@ -19,6 +19,21 @@ inputs:
   pr_number:
     description: Pull request number (defaults to event PR)
     required: false
+  reports_dir:
+    description: Directory to save reports (markdown + index.json)
+    required: false
+    default: reports
+  post_pr_comment:
+    description: Post full review text on the PR (default false)
+    required: false
+    default: "false"
+  post_pr_link:
+    description: Post a short link to the saved report on the PR
+    required: false
+    default: "false"
+  target_repository:
+    description: Repository to review as owner/repo (defaults to event repo)
+    required: false
 
 runs:
   using: composite
@@ -46,6 +61,10 @@ runs:
         GITHUB_TOKEN: ${{ inputs.github_token }}
         REVIEW_MODEL: ${{ inputs.model }}
         PR_NUMBER: ${{ inputs.pr_number || github.event.pull_request.number }}
+        TARGET_REPOSITORY: ${{ inputs.target_repository }}
+        REPORTS_DIR: ${{ github.action_path }}/reports
+        POST_PR_COMMENT: ${{ inputs.post_pr_comment }}
+        POST_PR_LINK: ${{ inputs.post_pr_link }}
       run: |
         cd "${{ github.workspace }}"
         npx --prefix "${{ github.action_path }}" tsx "${{ github.action_path }}/src/review-pr.ts"

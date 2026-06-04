@@ -1,0 +1,31 @@
+{
+  "updatedAt": "2026-06-04T06:57:27.070Z",
+  "reports": [
+    {
+      "id": "Tech-Merch-big-data-api-pr-24",
+      "owner": "Tech-Merch",
+      "repo": "big-data-api",
+      "pr": 24,
+      "title": "Feature/dashboard task/KAN-55 — Bank Request Circumstance",
+      "prUrl": "https://github.com/Tech-Merch/big-data-api/pull/24",
+      "reportUrl": "https://github.com/tonsappza/review-code-ai/blob/master/reports/Tech-Merch/big-data-api/pr-24.md",
+      "reviewedAt": "2026-06-04T06:57:27.067Z",
+      "model": "composer-2.5",
+      "filesChanged": 5,
+      "path": "reports/Tech-Merch/big-data-api/pr-24.md"
+    },
+    {
+      "id": "peter-evans-repository-dispatch-pr-333",
+      "owner": "peter-evans",
+      "repo": "repository-dispatch",
+      "pr": 333,
+      "title": "README: escape free text JSON values",
+      "prUrl": "https://github.com/peter-evans/repository-dispatch/pull/333",
+      "reportUrl": "https://github.com/tonsappza/review-code-ai/blob/master/reports/peter-evans/repository-dispatch/pr-333.md",
+      "reviewedAt": "2026-06-04T06:50:03.905Z",
+      "model": "composer-2.5",
+      "filesChanged": 1,
+      "path": "reports/peter-evans/repository-dispatch/pr-333.md"
+    }
+  ]
+}

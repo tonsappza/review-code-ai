@@ -10,6 +10,7 @@ export type PullRequestContext = {
   body: string;
   baseRef: string;
   headRef: string;
+  htmlUrl: string;
 };
 
 export function createOctokit(token: string): Octokit {
@@ -34,6 +35,7 @@ export async function fetchPullRequest(
     body: data.body ?? "",
     baseRef: data.base.ref,
     headRef: data.head.ref,
+    htmlUrl: data.html_url,
   };
 }
 

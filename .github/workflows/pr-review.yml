@@ -9,9 +9,14 @@ on:
         description: "Pull request number to review"
         required: true
         type: string
+      post_pr_link:
+        description: "Post a short link comment on the PR"
+        required: false
+        default: false
+        type: boolean
 
 permissions:
-  contents: read
+  contents: write
   pull-requests: write
   issues: write
 
@@ -43,4 +48,15 @@ jobs:
           CURSOR_API_KEY: ${{ secrets.CURSOR_API_KEY }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PR_NUMBER: ${{ github.event.pull_request.number || github.event.inputs.pr_number }}
+          REPORTS_DIR: ${{ github.workspace }}/reports
+          POST_PR_COMMENT: "false"
+          POST_PR_LINK: ${{ github.event.inputs.post_pr_link || 'false' }}
         run: npm run review
+
+      - name: Commit report
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add reports/
+          git diff --staged --quiet || git commit -m "report: ${{ github.repository }}#${{ github.event.pull_request.number || github.event.inputs.pr_number }}"
+          git push
