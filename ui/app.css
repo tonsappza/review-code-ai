@@ -329,8 +329,15 @@ body::before {
   gap: 0.45rem;
 }
 
-.pr-panel.hidden {
+.pr-panel.hidden,
+.repo-panel.hidden {
   display: none !important;
+}
+
+.repo-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
 }
 
 .label-sm {
@@ -751,6 +758,282 @@ input::placeholder {
   flex-shrink: 0;
 }
 
+.toolbar-search {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  flex: 1 1 200px;
+  max-width: 320px;
+  min-width: 140px;
+}
+
+.repo-load-row {
+  margin-bottom: 0.25rem;
+}
+
+.btn-load-wide {
+  width: 100%;
+}
+
+.repo-panel.is-loading .combo-trigger {
+  opacity: 0.75;
+}
+
+.field-hint.is-loading {
+  color: var(--text-secondary);
+}
+
+.loading-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+}
+
+.spinner {
+  width: 14px;
+  height: 14px;
+  border: 2px solid var(--border-strong);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 0.65s linear infinite;
+  flex-shrink: 0;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* Custom combobox (repository picker) */
+.combo {
+  position: relative;
+}
+
+.combo-trigger {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  width: 100%;
+  min-height: 44px;
+  padding: 0.55rem 0.75rem;
+  font: inherit;
+  font-size: 0.9rem;
+  text-align: left;
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: 10px;
+  cursor: pointer;
+  transition: border-color 0.15s, box-shadow 0.15s, background 0.15s;
+}
+
+.combo-trigger:hover:not(:disabled) {
+  border-color: var(--accent);
+  background: var(--surface-hover);
+}
+
+.combo-trigger:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.combo.is-open .combo-trigger {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-glow);
+}
+
+.combo.is-open .combo-chevron {
+  transform: rotate(180deg);
+}
+
+.combo-chevron {
+  flex-shrink: 0;
+  color: var(--text-muted);
+  transition: transform 0.2s;
+}
+
+.combo-trigger-text {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  min-width: 0;
+  flex: 1;
+}
+
+.combo-primary {
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.combo-sub {
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.combo-menu {
+  position: absolute;
+  z-index: 50;
+  top: calc(100% + 6px);
+  left: 0;
+  right: 0;
+  max-height: min(320px, 50dvh);
+  display: flex;
+  flex-direction: column;
+  background: var(--glass);
+  border: 1px solid var(--glass-border);
+  border-radius: 12px;
+  box-shadow: var(--shadow);
+  backdrop-filter: blur(20px) saturate(1.2);
+  -webkit-backdrop-filter: blur(20px) saturate(1.2);
+  overflow: hidden;
+  animation: comboIn 0.18s ease;
+}
+
+@keyframes comboIn {
+  from {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+}
+
+.combo-menu.hidden {
+  display: none !important;
+}
+
+.combo-search-wrap {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.5rem 0.65rem;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+}
+
+.combo-search-wrap input {
+  border: none;
+  background: transparent;
+  padding: 0.4rem 0;
+  box-shadow: none;
+}
+
+.combo-search-wrap input:focus {
+  box-shadow: none;
+  outline: none;
+}
+
+.combo-list {
+  overflow-y: auto;
+  padding: 0.35rem;
+  -webkit-overflow-scrolling: touch;
+}
+
+.combo-group-label {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  padding: 0.4rem 0.55rem 0.25rem;
+  font-size: 0.68rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--accent-hover);
+  background: var(--glass);
+  border-bottom: 1px solid var(--border);
+  margin-top: 0.25rem;
+}
+
+.combo-group-label:first-child {
+  margin-top: 0;
+}
+
+.combo-option {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.15rem;
+  width: 100%;
+  padding: 0.55rem 0.65rem;
+  margin-bottom: 2px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 0.85rem;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.12s;
+}
+
+.combo-option:hover {
+  background: var(--accent-subtle);
+}
+
+.combo-option.is-active {
+  background: var(--accent-subtle);
+  box-shadow: inset 0 0 0 1px var(--accent-glow);
+}
+
+.combo-option-main {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  width: 100%;
+}
+
+.combo-option-name {
+  font-weight: 600;
+}
+
+.combo-option-desc {
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  line-height: 1.35;
+}
+
+.combo-badge {
+  font-size: 0.62rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  padding: 0.1rem 0.35rem;
+  border-radius: 4px;
+  background: var(--warn-bg);
+  color: var(--warn);
+}
+
+.combo-empty {
+  padding: 1.25rem 0.75rem;
+  text-align: center;
+  font-size: 0.82rem;
+  color: var(--text-muted);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.45rem;
+}
+
+.filter-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  align-items: flex-start;
+}
+
+.filter-field.hidden {
+  display: none !important;
+}
+
+.detail-actions .filter-field .select-sm {
+  min-width: 130px;
+}
+
 .reports-heading h2 {
   margin: 0;
   font-size: 1.2rem;
@@ -766,9 +1049,7 @@ input::placeholder {
 
 .search-wrap {
   position: relative;
-  flex: 1 1 200px;
-  max-width: 320px;
-  min-width: 140px;
+  width: 100%;
 }
 
 .search-icon {

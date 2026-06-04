@@ -8,6 +8,24 @@ const reportBack = $("#report-back");
 const metaThemeColor = $("#meta-theme-color");
 
 const form = $("#review-form");
+const repoCombo = $("#repo-combo");
+const repoComboTrigger = $("#repo-combo-trigger");
+const repoComboLabelText = $("#repo-combo-label-text");
+const repoComboMenu = $("#repo-combo-menu");
+const repoComboList = $("#repo-combo-list");
+const repoSearch = $("#repo-search");
+const repoValue = $("#repo-value");
+const repoInputManual = $("#repo-input-manual");
+const repoHint = $("#repo-hint");
+const loadReposBtn = $("#load-repos-btn");
+const repoPanelGithub = $("#repo-panel-github");
+const repoPanelManual = $("#repo-panel-manual");
+const severityFilterWrap = $("#severity-filter-wrap");
+const LOAD_REPOS_BTN_LABEL = "โหลด repo จาก GitHub";
+const repoModeButtons = document.querySelectorAll(
+  ".repo-field .segmented-btn[data-repo-mode]",
+);
+const REPO_MODE_KEY = "rcai-repo-mode";
 const runBtn = $("#run-btn");
 const loadPrsBtn = $("#load-prs-btn");
 const prSelect = $("#pr-select");
@@ -38,6 +56,9 @@ const searchInput = $("#search");
 let reports = [];
 let eventSource = null;
 let currentReportPath = null;
+let serverApiVersion = 0;
+/** @type {Array<{ fullName: string; description: string | null; private: boolean }>} */
+let cachedRepos = [];
 
 function btnLabel(text) {
   const el = runBtn?.querySelector(".btn-label");
@@ -118,6 +139,279 @@ function setStatusPills(health) {
   statusBar.appendChild(mode);
 }
 
+function getRepoInputMode() {
+  return (
+    document.querySelector(".repo-field .segmented-btn[data-repo-mode].active")
+      ?.dataset.repoMode || "github"
+  );
+}
+
+function setComboTriggerText(text, sub = "") {
+  if (!repoComboLabelText) return;
+  if (sub) {
+    repoComboLabelText.innerHTML = `<span class="combo-primary">${escapeHtml(text)}</span><span class="combo-sub">${escapeHtml(sub)}</span>`;
+  } else {
+    repoComboLabelText.textContent = text;
+  }
+}
+
+function setRepositoryValue(fullName) {
+  if (repoValue) repoValue.value = fullName;
+  const repo = cachedRepos.find((r) => r.fullName === fullName);
+  if (fullName && repo) {
+    setComboTriggerText(repo.fullName, repo.private ? "private" : repo.description?.slice(0, 40) ?? "");
+  } else if (fullName) {
+    setComboTriggerText(fullName);
+  } else {
+    setComboTriggerText(cachedRepos.length ? "เลือก repository" : "กดโหลด repo ก่อน");
+  }
+}
+
+function setRepoComboOpen(open) {
+  if (!repoCombo || !repoComboTrigger || !repoComboMenu) return;
+  repoCombo.classList.toggle("is-open", open);
+  repoComboTrigger.setAttribute("aria-expanded", open ? "true" : "false");
+  repoComboMenu.classList.toggle("hidden", !open);
+  if (open) {
+    repoSearch?.focus();
+  }
+}
+
+function setRepoComboEnabled(enabled) {
+  if (repoComboTrigger) repoComboTrigger.disabled = !enabled;
+  if (repoSearch) repoSearch.disabled = !enabled;
+}
+
+function getRepository() {
+  const mode = getRepoInputMode();
+  if (mode === "manual") {
+    const v = repoInputManual?.value?.trim() ?? "";
+    if (!v.includes("/")) {
+      throw new Error("ใส่ repository แบบ owner/repo");
+    }
+    return v;
+  }
+  const v = (repoValue?.value || "").trim();
+  if (!v) {
+    throw new Error("เลือก repository จาก GitHub (กดโหลดก่อน)");
+  }
+  return v;
+}
+
+function setRepoInputMode(
+  mode,
+  options = { autoLoad: true, silent: true },
+) {
+  const github = mode === "github";
+  repoModeButtons.forEach((btn) => {
+    const on = btn.dataset.repoMode === mode;
+    btn.classList.toggle("active", on);
+    btn.setAttribute("aria-selected", on ? "true" : "false");
+  });
+
+  repoPanelGithub?.classList.toggle("hidden", !github);
+  repoPanelManual?.classList.toggle("hidden", github);
+  if (repoPanelGithub) repoPanelGithub.hidden = !github;
+  if (repoPanelManual) repoPanelManual.hidden = github;
+
+  if (repoInputManual) repoInputManual.required = !github;
+  if (!github) setRepoComboOpen(false);
+  setRepoComboEnabled(github && cachedRepos.length > 0);
+
+  localStorage.setItem(REPO_MODE_KEY, mode);
+
+  if (github && options.autoLoad) void loadRepositories({ silent: options.silent });
+  else if (github && options.autoLoad && serverApiVersion < 2) {
+    repoHint.textContent = "รีสตาร์ท UI: Ctrl+C แล้ว npm run ui";
+  }
+}
+
+repoModeButtons.forEach((btn) => {
+  btn.addEventListener("click", () =>
+    setRepoInputMode(btn.dataset.repoMode, { autoLoad: true, silent: false }),
+  );
+});
+
+function repoApiErrorMessage(err) {
+  const msg = err instanceof Error ? err.message : String(err);
+  if (msg === "Not Found") {
+    return "เซิร์ฟเวอร์เก่า — รีสตาร์ท: Ctrl+C แล้ว npm run ui";
+  }
+  return msg;
+}
+
+function groupReposByOwner(repos) {
+  const map = new Map();
+  for (const r of repos) {
+    const slash = r.fullName.indexOf("/");
+    const owner = slash > 0 ? r.fullName.slice(0, slash) : r.fullName;
+    const repoName = slash > 0 ? r.fullName.slice(slash + 1) : r.fullName;
+    if (!map.has(owner)) map.set(owner, []);
+    map.get(owner).push({ ...r, repoName });
+  }
+  return [...map.entries()].sort(([a], [b]) =>
+    a.localeCompare(b, undefined, { sensitivity: "base" }),
+  );
+}
+
+function renderRepoCombo(filter = "", selected = "") {
+  if (!repoComboList) return;
+
+  const q = filter.trim().toLowerCase();
+  const filtered = q
+    ? cachedRepos.filter((r) => {
+        const hay = `${r.fullName} ${r.description ?? ""}`.toLowerCase();
+        return hay.includes(q);
+      })
+    : cachedRepos;
+
+  if (filtered.length === 0) {
+    repoComboList.innerHTML = `<div class="combo-empty">${q ? "ไม่พบ repository" : "ไม่มี repo"}</div>`;
+    return;
+  }
+
+  const parts = [];
+  for (const [owner, list] of groupReposByOwner(filtered)) {
+    parts.push(`<div class="combo-group-label">${escapeHtml(owner)}</div>`);
+    for (const r of list) {
+      const active = r.fullName === selected ? " is-active" : "";
+      const lock = r.private
+        ? '<span class="combo-badge">private</span>'
+        : "";
+      const desc = r.description
+        ? `<span class="combo-option-desc">${escapeHtml(r.description.slice(0, 48))}${r.description.length > 48 ? "…" : ""}</span>`
+        : "";
+      parts.push(
+        `<button type="button" class="combo-option${active}" role="option" data-value="${escapeHtml(r.fullName)}" aria-selected="${r.fullName === selected}">` +
+          `<span class="combo-option-main"><span class="combo-option-name">${escapeHtml(r.repoName)}</span>${lock}</span>` +
+          desc +
+          `</button>`,
+      );
+    }
+  }
+  repoComboList.innerHTML = parts.join("");
+
+  repoComboList.querySelectorAll(".combo-option").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const value = btn.dataset.value;
+      if (!value) return;
+      setRepositoryValue(value);
+      renderRepoCombo(repoSearch?.value ?? "", value);
+      setRepoComboOpen(false);
+      if (getPrInputMode() === "load") void loadPullRequests();
+    });
+  });
+}
+
+function setRepoLoading(loading) {
+  repoPanelGithub?.classList.toggle("is-loading", loading);
+
+  if (loadReposBtn) {
+    loadReposBtn.disabled = loading;
+    loadReposBtn.textContent = loading ? "กำลังโหลด…" : LOAD_REPOS_BTN_LABEL;
+  }
+
+  if (loading) {
+    if (repoHint) {
+      repoHint.classList.add("is-loading");
+      repoHint.innerHTML =
+        '<span class="loading-row"><span class="spinner" aria-hidden="true"></span>โหลดรอก่อน…</span>';
+    }
+    setComboTriggerText("โหลดรอก่อน…");
+    setRepoComboEnabled(false);
+    setRepoComboOpen(false);
+    if (repoSearch) repoSearch.placeholder = "โหลดรอก่อน…";
+    if (repoComboList) {
+      repoComboList.innerHTML =
+        '<div class="combo-empty"><span class="spinner" aria-hidden="true"></span> โหลดรอก่อน…</div>';
+    }
+    return;
+  }
+
+  repoHint?.classList.remove("is-loading");
+}
+
+async function loadRepositories(options = { silent: false }) {
+  if (getRepoInputMode() !== "github") return;
+
+  if (serverApiVersion < 2) {
+    repoHint.textContent = "รีสตาร์ท UI: Ctrl+C แล้ว npm run ui";
+    if (!options.silent) {
+      alert(repoHint.textContent);
+    }
+    return;
+  }
+
+  setRepoLoading(true);
+  try {
+    const data = await api("/api/repos?limit=100");
+    const user = await api("/api/github/me").catch(() => null);
+
+    cachedRepos = data.repos ?? [];
+    const prev = repoValue?.value || "";
+
+    if (repoSearch) {
+      repoSearch.value = "";
+      repoSearch.placeholder = "ค้นหา owner / repo…";
+    }
+    setRepoComboEnabled(true);
+
+    renderRepoCombo("", prev);
+    if (prev) setRepositoryValue(prev);
+    else setComboTriggerText("เลือก repository");
+
+    const owners = new Set(
+      cachedRepos.map((r) => r.fullName.split("/")[0]).filter(Boolean),
+    );
+    const who = user?.login ? `@${user.login}` : "GitHub";
+    if (repoHint) {
+      repoHint.textContent = `${who} · ${cachedRepos.length} repo · ${owners.size} owner${data.source ? ` (${data.source})` : ""}`;
+    }
+  } catch (err) {
+    const msg = repoApiErrorMessage(err);
+    if (repoHint) repoHint.textContent = msg;
+    if (cachedRepos.length === 0) {
+      setRepoComboEnabled(false);
+      setComboTriggerText("กดโหลด repo ก่อน");
+      if (repoComboList) {
+        repoComboList.innerHTML =
+          '<div class="combo-empty">กดโหลด repo จาก GitHub</div>';
+      }
+    }
+    if (!options.silent) alert(msg);
+  } finally {
+    setRepoLoading(false);
+  }
+}
+
+loadReposBtn?.addEventListener("click", () =>
+  void loadRepositories({ silent: false }),
+);
+
+repoComboTrigger?.addEventListener("click", (e) => {
+  e.stopPropagation();
+  if (repoComboTrigger.disabled || cachedRepos.length === 0) return;
+  const open = !repoCombo?.classList.contains("is-open");
+  setRepoComboOpen(open);
+  if (open) {
+    renderRepoCombo(repoSearch?.value ?? "", repoValue?.value ?? "");
+  }
+});
+
+repoComboMenu?.addEventListener("click", (e) => e.stopPropagation());
+
+repoSearch?.addEventListener("input", () => {
+  renderRepoCombo(repoSearch.value, repoValue?.value ?? "");
+});
+
+repoSearch?.addEventListener("keydown", (e) => {
+  if (e.key === "Escape") setRepoComboOpen(false);
+});
+
+document.addEventListener("click", (e) => {
+  if (!repoCombo?.contains(e.target)) setRepoComboOpen(false);
+});
+
 function getPrInputMode() {
   return (
     document.querySelector(".segmented-btn[data-pr-mode].active")?.dataset
@@ -146,8 +440,13 @@ function setPrInputMode(mode) {
 
   localStorage.setItem(PR_MODE_KEY, mode);
 
-  if (!manual && form.repository.value.trim()) {
-    void loadPullRequests();
+  if (!manual) {
+    try {
+      getRepository();
+      void loadPullRequests();
+    } catch {
+      /* repo not chosen yet */
+    }
   }
 }
 
@@ -170,8 +469,19 @@ prModeButtons.forEach((btn) => {
 });
 
 function fillDefaults(health) {
+  const savedRepoMode = localStorage.getItem(REPO_MODE_KEY);
+  const repoMode =
+    savedRepoMode === "manual" || savedRepoMode === "github"
+      ? savedRepoMode
+      : "github";
+  setRepoInputMode(repoMode, { autoLoad: false, silent: true });
+
   if (health.defaultRepository) {
-    form.repository.value = health.defaultRepository;
+    if (repoMode === "github") {
+      setRepositoryValue(health.defaultRepository);
+    } else if (repoInputManual) {
+      repoInputManual.value = health.defaultRepository;
+    }
   }
 
   const savedMode = localStorage.getItem(PR_MODE_KEY);
@@ -252,6 +562,25 @@ function escapeHtml(s) {
     .replace(/>/g, "&gt;");
 }
 
+function reportHasFindings(data) {
+  if (data.findings?.length) return true;
+  const c = data.counts ?? data.meta?.findingCounts;
+  if (!c || typeof c !== "object") return false;
+  return (
+    (c.critical ?? 0) +
+      (c.major ?? 0) +
+      (c.minor ?? 0) +
+      (c.suggestion ?? 0) >
+    0
+  );
+}
+
+function updateFindingsFilterVisibility(data) {
+  const show = reportHasFindings(data);
+  severityFilterWrap?.classList.toggle("hidden", !show);
+  if (!show && severityFilter) severityFilter.value = "";
+}
+
 function renderFindingCards(findings) {
   if (!findings?.length) {
     findingsCards.classList.add("hidden");
@@ -298,6 +627,7 @@ async function loadReport(path, activeBtn, severity) {
     reportPrLink.textContent = "เปิด PR";
   }
 
+  updateFindingsFilterVisibility(data);
   renderFindingCards(data.findings);
   reportBody.innerHTML = marked.parse(data.markdown);
 }
@@ -317,9 +647,11 @@ async function refreshReports() {
 async function loadPullRequests() {
   if (getPrInputMode() !== "load") return;
 
-  const repo = form.repository.value.trim();
-  if (!repo) {
-    prHint.textContent = "ใส่ repository ก่อน (owner/repo)";
+  let repo;
+  try {
+    repo = getRepository();
+  } catch {
+    prHint.textContent = "เลือก repository ก่อน";
     return;
   }
   loadPrsBtn.disabled = true;
@@ -425,8 +757,10 @@ function streamJob(id) {
 form.addEventListener("submit", async (e) => {
   e.preventDefault();
 
+  let repository;
   let prNumber;
   try {
+    repository = getRepository();
     prNumber = resolvePrNumber();
   } catch (err) {
     alert(err.message);
@@ -439,7 +773,7 @@ form.addEventListener("submit", async (e) => {
   openReport.classList.add("hidden");
 
   const body = {
-    repository: form.repository.value.trim(),
+    repository,
     prNumber,
     postPrLink: form.postPrLink.checked,
     postInline: form.postInline.checked,
@@ -474,20 +808,32 @@ searchInput.addEventListener("input", () => renderReportList(searchInput.value))
 async function init() {
   setTheme(getTheme());
   setMobileTab("review");
-  if (!localStorage.getItem(PR_MODE_KEY)) {
-    setPrInputMode("manual");
-  }
   if (metaThemeColor) {
     metaThemeColor.content = getTheme() === "light" ? "#f8fafc" : "#09090b";
   }
 
   try {
     const health = await api("/api/health");
+    serverApiVersion = health.apiVersion ?? 0;
     setStatusPills(health);
+
+    if (!localStorage.getItem(PR_MODE_KEY)) {
+      setPrInputMode("manual");
+    }
+
     fillDefaults(health);
+
+    if (getRepoInputMode() === "github" && health.githubAuth) {
+      const shouldLoad =
+        serverApiVersion >= 2 || cachedRepos.length === 0;
+      if (shouldLoad) {
+        void loadRepositories({ silent: true });
+      }
+    }
   } catch (err) {
     statusBar.innerHTML = `<span class="pill bad">Server: ${escapeHtml(err.message)}</span>`;
   }
+
   await refreshReports();
 }
 

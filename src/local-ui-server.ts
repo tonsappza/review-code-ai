@@ -6,9 +6,14 @@ import { getGhToken } from "./checkout.js";
 import { resolveReviewMode } from "./config.js";
 import { runHubReview, HUB_ROOT } from "./hub-review.js";
 import type { PullRequestState } from "./github.js";
-import { createOctokit, listPullRequestsResolved } from "./github.js";
-import { resolveReportsDir } from "./report.js";
-import type { ReportsIndex } from "./report.js";
+import {
+  createOctokit,
+  filterRepositories,
+  getAuthenticatedUser,
+  listPullRequestsResolved,
+  listRepositoriesResolved,
+} from "./github.js";
+import { readReportsIndex, resolveReportsDir } from "./report.js";
 import type { FindingSeverity } from "./core/types.js";
 
 loadDotenv();
@@ -239,6 +244,7 @@ const server = http.createServer(async (req, res) => {
       }
       json(res, 200, {
         ok: true,
+        apiVersion: 2,
         cursorApiKey: hasKey,
         githubAuth: ghOk,
         defaultRepository:
@@ -247,6 +253,51 @@ const server = http.createServer(async (req, res) => {
         defaultReviewMode: resolveReviewMode(),
         model: process.env.REVIEW_MODEL ?? "composer-2.5",
       });
+      return;
+    }
+
+    if (req.method === "GET" && url.pathname === "/api/github/me") {
+      try {
+        const token = getGhToken();
+        const user = await getAuthenticatedUser(createOctokit(token));
+        json(res, 200, user);
+      } catch (err) {
+        json(res, 401, {
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
+      return;
+    }
+
+    if (req.method === "GET" && url.pathname === "/api/repos") {
+      try {
+        const token = getGhToken();
+        const q = url.searchParams.get("q")?.trim() ?? "";
+        const limit = Math.min(
+          Number.parseInt(url.searchParams.get("limit") ?? "100", 10) || 100,
+          100,
+        );
+        const { repos, source } = await listRepositoriesResolved(
+          createOctokit(token),
+          { limit },
+        );
+        const filtered = filterRepositories(repos, q);
+        json(res, 200, {
+          repos: filtered,
+          total: repos.length,
+          source,
+          hint:
+            filtered.length === 0
+              ? q
+                ? `ไม่พบ repo ที่ตรง "${q}"`
+                : "ไม่พบ repo — ลอง gh auth login หรือ GITHUB_TOKEN"
+              : undefined,
+        });
+      } catch (err) {
+        json(res, 401, {
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
       return;
     }
 
@@ -281,12 +332,7 @@ const server = http.createServer(async (req, res) => {
     }
 
     if (req.method === "GET" && url.pathname === "/api/reports") {
-      const indexPath = path.join(resolveReportsDir(), "index.json");
-      if (!fs.existsSync(indexPath)) {
-        json(res, 200, { updatedAt: null, reports: [] });
-        return;
-      }
-      const index = JSON.parse(fs.readFileSync(indexPath, "utf8")) as ReportsIndex;
+      const index = await readReportsIndex(resolveReportsDir());
       json(res, 200, index);
       return;
     }

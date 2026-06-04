@@ -103,7 +103,23 @@ export function cleanupReviewTarget(
     return false;
   }
   if (!fs.existsSync(targetDir)) return false;
-  fs.rmSync(targetDir, { recursive: true, force: true, maxRetries: 3 });
-  onLog?.(`Removed clone ${targetDir}`);
-  return true;
+
+  const opts = { recursive: true, force: true, maxRetries: 5, retryDelay: 300 };
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    try {
+      fs.rmSync(targetDir, opts);
+      onLog?.(`Removed clone ${targetDir}`);
+      return true;
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      if (attempt === 3) {
+        onLog?.(
+          `Could not remove clone ${targetDir}: ${msg} — close editors using this folder and delete manually`,
+        );
+        return false;
+      }
+      onLog?.(`Cleanup retry ${attempt}/3…`);
+    }
+  }
+  return false;
 }

@@ -2,6 +2,9 @@ node_modules/
 dist/
 .env
 .review-target/
+
+# Local catalog only (per-machine); UI rebuilds from report files
+reports/index.json
 github-app.private-key.pem
 *.pem
 !public.pub

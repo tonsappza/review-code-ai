@@ -194,14 +194,7 @@ export async function updateReportsIndex(
   entry: ReportMeta,
 ): Promise<void> {
   const indexPath = path.join(reportsDir, "index.json");
-  let index: ReportsIndex = { updatedAt: new Date().toISOString(), reports: [] };
-
-  try {
-    const raw = await fs.readFile(indexPath, "utf8");
-    index = JSON.parse(raw) as ReportsIndex;
-  } catch {
-    // new index
-  }
+  const index = await readReportsIndex(reportsDir);
 
   const without = index.reports.filter((r) => r.id !== entry.id);
   without.unshift(entry);
@@ -209,6 +202,130 @@ export async function updateReportsIndex(
   index.updatedAt = new Date().toISOString();
 
   await fs.writeFile(indexPath, JSON.stringify(index, null, 2) + "\n", "utf8");
+}
+
+/** Scan pr-*.json on disk (source of truth for local UI). */
+export async function scanReportsFromDisk(
+  reportsDir: string,
+): Promise<ReportMeta[]> {
+  const results: ReportMeta[] = [];
+
+  let topEntries: string[];
+  try {
+    topEntries = await fs.readdir(reportsDir);
+  } catch {
+    return results;
+  }
+
+  for (const owner of topEntries) {
+    if (owner.startsWith(".") || owner.endsWith(".html") || owner.endsWith(".md")) {
+      continue;
+    }
+    const ownerPath = path.join(reportsDir, owner);
+    let ownerStat;
+    try {
+      ownerStat = await fs.stat(ownerPath);
+    } catch {
+      continue;
+    }
+    if (!ownerStat.isDirectory()) continue;
+
+    let repoEntries: string[];
+    try {
+      repoEntries = await fs.readdir(ownerPath);
+    } catch {
+      continue;
+    }
+
+    for (const repo of repoEntries) {
+      const repoPath = path.join(ownerPath, repo);
+      let repoStat;
+      try {
+        repoStat = await fs.stat(repoPath);
+      } catch {
+        continue;
+      }
+      if (!repoStat.isDirectory()) continue;
+
+      let files: string[];
+      try {
+        files = await fs.readdir(repoPath);
+      } catch {
+        continue;
+      }
+
+      for (const file of files) {
+        const m = /^pr-(\d+)\.json$/i.exec(file);
+        if (!m) continue;
+        const jsonPath = path.join(repoPath, file);
+        try {
+          const raw = await fs.readFile(jsonPath, "utf8");
+          const data = JSON.parse(raw) as { meta?: ReportMeta };
+          if (data.meta?.id) {
+            results.push(data.meta);
+            continue;
+          }
+        } catch {
+          /* fall through to minimal meta */
+        }
+        const pr = Number.parseInt(m[1]!, 10);
+        results.push({
+          id: reportId(owner, repo, pr),
+          owner,
+          repo,
+          pr,
+          title: "",
+          prUrl: `https://github.com/${owner}/${repo}/pull/${pr}`,
+          reportUrl: reportPublicUrl(owner, repo, pr),
+          reviewedAt: "",
+          filesChanged: 0,
+          path: reportRelativePath(owner, repo, pr),
+          jsonPath: reportJsonRelativePath(owner, repo, pr),
+          reviewMode: "explore",
+          verdict: "pass",
+          findingCounts: {
+            critical: 0,
+            major: 0,
+            minor: 0,
+            suggestion: 0,
+          },
+        });
+      }
+    }
+  }
+
+  return results;
+}
+
+/** Local index: merge index.json (if present) with scanned report files. */
+export async function readReportsIndex(
+  reportsDir: string,
+): Promise<ReportsIndex> {
+  const indexPath = path.join(reportsDir, "index.json");
+  const byId = new Map<string, ReportMeta>();
+
+  try {
+    const raw = await fs.readFile(indexPath, "utf8");
+    const parsed = JSON.parse(raw) as ReportsIndex;
+    for (const r of parsed.reports ?? []) {
+      if (r.id) byId.set(r.id, r);
+    }
+  } catch {
+    /* no local index file */
+  }
+
+  for (const r of await scanReportsFromDisk(reportsDir)) {
+    byId.set(r.id, r);
+  }
+
+  const reports = [...byId.values()]
+    .sort((a, b) => (b.reviewedAt || "").localeCompare(a.reviewedAt || ""))
+    .slice(0, MAX_INDEX_ENTRIES);
+
+  return {
+    updatedAt: new Date().toISOString(),
+    reports,
+  };
 }
 
 export function formatPrLinkComment(meta: ReportMeta): string {

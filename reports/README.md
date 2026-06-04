@@ -6,11 +6,12 @@ AI review results are saved here instead of (or in addition to) long PR comments
 
 ```
 reports/
-  index.json      # catalog for the dashboard
+  index.json      # local catalog (gitignored — per machine)
   index.html      # open in browser (GitHub Pages or locally)
   {owner}/
     {repo}/
       pr-{number}.md
+      pr-{number}.json
 ```
 
 ## View reports

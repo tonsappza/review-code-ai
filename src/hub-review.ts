@@ -41,41 +41,44 @@ export async function runHubReview(
 
   log(`Review ${input.repository}#${input.prNumber}`);
 
-  clonePrHead({
-    repository: input.repository,
-    prNumber: input.prNumber,
-    targetDir,
-  });
+  try {
+    log(`Cloning PR head to ${targetDir}…`);
+    clonePrHead({
+      repository: input.repository,
+      prNumber: input.prNumber,
+      targetDir,
+    });
 
-  const { meta } = await runReviewPipeline({
-    token: input.token,
-    repository: input.repository,
-    prNumber: input.prNumber,
-    apiKey: input.apiKey,
-    model: input.model,
-    mode: resolveReviewMode(input.mode),
-    reviewCwd: targetDir,
-    reportsDir,
-    incremental: input.incremental,
-    githubFeedback: input.githubFeedback,
-    onLog: input.onLog,
-  });
+    const { meta } = await runReviewPipeline({
+      token: input.token,
+      repository: input.repository,
+      prNumber: input.prNumber,
+      apiKey: input.apiKey,
+      model: input.model,
+      mode: resolveReviewMode(input.mode),
+      reviewCwd: targetDir,
+      reportsDir,
+      incremental: input.incremental,
+      githubFeedback: input.githubFeedback,
+      onLog: input.onLog,
+    });
 
-  if (parseBool(process.env.HUB_AUTO_COMMIT, false)) {
-    try {
-      commitReportsToHub(meta, input.repository, input.prNumber);
-      log("Committed report to hub repository");
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      log(`Hub commit skipped/failed: ${msg}`);
+    if (parseBool(process.env.HUB_AUTO_COMMIT, false)) {
+      try {
+        commitReportsToHub(meta, input.repository, input.prNumber);
+        log("Committed report to hub repository");
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        log(`Hub commit skipped/failed: ${msg}`);
+      }
+    }
+
+    return { meta };
+  } finally {
+    if (shouldCleanup) {
+      cleanupReviewTarget(targetDir, log);
     }
   }
-
-  if (shouldCleanup) {
-    cleanupReviewTarget(targetDir, log);
-  }
-
-  return { meta };
 }
 
 function commitReportsToHub(

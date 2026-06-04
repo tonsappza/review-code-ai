@@ -138,6 +138,121 @@ export async function fetchChangedFiles(
   return files;
 }
 
+export type RepoListItem = {
+  fullName: string;
+  description: string | null;
+  updatedAt: string;
+  private: boolean;
+  url: string;
+};
+
+export type GitHubUserSummary = {
+  login: string;
+  name: string | null;
+  avatarUrl: string;
+};
+
+export async function getAuthenticatedUser(
+  octokit: Octokit,
+): Promise<GitHubUserSummary> {
+  const { data } = await octokit.users.getAuthenticated();
+  return {
+    login: data.login,
+    name: data.name ?? null,
+    avatarUrl: data.avatar_url,
+  };
+}
+
+export async function listRepositories(
+  octokit: Octokit,
+  options?: { limit?: number },
+): Promise<RepoListItem[]> {
+  const limit = Math.min(options?.limit ?? 100, 100);
+
+  const { data } = await octokit.repos.listForAuthenticatedUser({
+    per_page: limit,
+    sort: "updated",
+    direction: "desc",
+    affiliation: "owner,collaborator,organization_member",
+  });
+
+  return data.map((r) => ({
+    fullName: r.full_name ?? `${r.owner?.login}/${r.name}`,
+    description: r.description ?? null,
+    updatedAt: r.updated_at ?? "",
+    private: r.private ?? false,
+    url: r.html_url ?? "",
+  }));
+}
+
+/** Fallback — uses local `gh repo list`. */
+export function listRepositoriesViaGh(options?: {
+  limit?: number;
+}): RepoListItem[] {
+  const limit = options?.limit ?? 100;
+
+  const json = execFileSync(
+    "gh",
+    [
+      "repo",
+      "list",
+      "--limit",
+      String(limit),
+      "--json",
+      "nameWithOwner,description,updatedAt,isPrivate,url",
+    ],
+    { encoding: "utf8" },
+  );
+
+  const rows = JSON.parse(json) as Array<{
+    nameWithOwner: string;
+    description?: string | null;
+    updatedAt: string;
+    isPrivate: boolean;
+    url: string;
+  }>;
+
+  return rows.map((r) => ({
+    fullName: r.nameWithOwner,
+    description: r.description ?? null,
+    updatedAt: r.updatedAt,
+    private: r.isPrivate,
+    url: r.url,
+  }));
+}
+
+export async function listRepositoriesResolved(
+  octokit: Octokit,
+  options?: { limit?: number },
+): Promise<{ repos: RepoListItem[]; source: "api" | "gh-cli" }> {
+  try {
+    const repos = await listRepositories(octokit, options);
+    if (repos.length > 0) return { repos, source: "api" };
+  } catch {
+    /* try gh */
+  }
+
+  try {
+    const repos = listRepositoriesViaGh(options);
+    return { repos, source: "gh-cli" };
+  } catch {
+    return { repos: [], source: "api" };
+  }
+}
+
+export function filterRepositories(
+  repos: RepoListItem[],
+  query?: string,
+): RepoListItem[] {
+  const q = query?.trim().toLowerCase();
+  if (!q) return repos;
+  return repos.filter(
+    (r) =>
+      r.fullName.toLowerCase().includes(q) ||
+      (r.description?.toLowerCase().includes(q) ?? false),
+  );
+}
+
 export type PullRequestState = "open" | "closed" | "all";
 
 export type PullRequestListItem = {

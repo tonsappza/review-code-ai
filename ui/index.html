@@ -24,7 +24,7 @@
       href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700&family=JetBrains+Mono:wght@400;500&display=swap"
       rel="stylesheet"
     />
-    <link rel="stylesheet" href="/app.css" />
+    <link rel="stylesheet" href="/app.css?v=4" />
   </head>
   <body>
     <header class="topbar">
@@ -78,17 +78,85 @@
         <p class="panel-label mobile-only">รัน Review</p>
         <section class="card glass">
           <form id="review-form" class="form">
-            <div class="field">
-              <label class="label" for="repo-input">Repository</label>
-              <span class="label-hint">owner/repo</span>
-              <input
-                id="repo-input"
-                name="repository"
-                type="text"
-                placeholder="Tech-Merch/big-data-api"
-                required
-                autocomplete="off"
-              />
+            <div class="field repo-field">
+              <span class="label" id="repo-label">Repository</span>
+              <div class="segmented" role="tablist" aria-labelledby="repo-label">
+                <button
+                  type="button"
+                  class="segmented-btn active"
+                  data-repo-mode="github"
+                  role="tab"
+                  aria-selected="true"
+                  id="repo-mode-github"
+                >
+                  จาก GitHub
+                </button>
+                <button
+                  type="button"
+                  class="segmented-btn"
+                  data-repo-mode="manual"
+                  role="tab"
+                  aria-selected="false"
+                  id="repo-mode-manual"
+                >
+                  พิมพ์เอง
+                </button>
+              </div>
+
+              <div id="repo-panel-github" class="repo-panel" role="tabpanel">
+                <div class="row repo-load-row">
+                  <button type="button" id="load-repos-btn" class="btn btn-ghost btn-load-wide">
+                    โหลด repo จาก GitHub
+                  </button>
+                </div>
+                <label class="label-sm" id="repo-combo-label">เลือก repository</label>
+                <div class="combo" id="repo-combo">
+                  <button
+                    type="button"
+                    class="combo-trigger"
+                    id="repo-combo-trigger"
+                    disabled
+                    aria-haspopup="listbox"
+                    aria-expanded="false"
+                    aria-labelledby="repo-combo-label"
+                  >
+                    <span class="combo-trigger-text" id="repo-combo-label-text"
+                      >กดโหลด repo ก่อน</span
+                    >
+                    <svg class="combo-chevron" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                      <path d="M6 9l6 6 6-6" />
+                    </svg>
+                  </button>
+                  <div class="combo-menu hidden" id="repo-combo-menu" role="listbox">
+                    <div class="combo-search-wrap">
+                      <svg class="search-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                        <circle cx="11" cy="11" r="7" />
+                        <path d="M20 20L16 16" />
+                      </svg>
+                      <input
+                        type="search"
+                        id="repo-search"
+                        placeholder="ค้นหา owner / repo…"
+                        disabled
+                        autocomplete="off"
+                      />
+                    </div>
+                    <div class="combo-list" id="repo-combo-list"></div>
+                  </div>
+                </div>
+                <p id="repo-hint" class="field-hint"></p>
+                <input type="hidden" id="repo-value" name="repository" value="" />
+              </div>
+
+              <div id="repo-panel-manual" class="repo-panel hidden" role="tabpanel" hidden>
+                <input
+                  id="repo-input-manual"
+                  type="text"
+                  placeholder="owner/repo"
+                  autocomplete="off"
+                />
+                <p class="field-hint">พิมพ์ `owner/repo` โดยตรง</p>
+              </div>
             </div>
 
             <div class="field-row">
@@ -205,12 +273,20 @@
             <h2>Reports</h2>
             <p class="main-sub">ประวัติ review ใน hub</p>
           </div>
-          <div class="search-wrap">
-            <svg class="search-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
-              <circle cx="11" cy="11" r="7" />
-              <path d="M20 20L16 16" />
-            </svg>
-            <input type="search" id="search" placeholder="ค้นหา..." enterkeyhint="search" />
+          <div class="toolbar-search">
+            <label class="label-sm" for="search">ค้นหา report</label>
+            <div class="search-wrap">
+              <svg class="search-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                <circle cx="11" cy="11" r="7" />
+                <path d="M20 20L16 16" />
+              </svg>
+              <input
+                type="search"
+                id="search"
+                placeholder="repo, PR, verdict…"
+                enterkeyhint="search"
+              />
+            </div>
           </div>
         </div>
 
@@ -231,14 +307,17 @@
                   <span id="report-verdict" class="verdict"></span>
                 </div>
                 <div class="detail-actions">
-                  <select id="severity-filter" class="select-sm" aria-label="กรอง severity">
-                    <option value="">ทั้งหมด</option>
-                    <option value="critical">critical</option>
-                    <option value="major">major</option>
-                    <option value="minor">minor</option>
-                    <option value="suggestion">suggestion</option>
-                  </select>
-                  <a id="report-pr-link" class="btn btn-ghost btn-sm" href="#" target="_blank" rel="noopener">PR ↗</a>
+                  <div id="severity-filter-wrap" class="filter-field hidden">
+                    <label class="label-sm" for="severity-filter">กรอง findings</label>
+                    <select id="severity-filter" class="select-sm">
+                      <option value="">ทุกระดับ</option>
+                      <option value="critical">critical</option>
+                      <option value="major">major</option>
+                      <option value="minor">minor</option>
+                      <option value="suggestion">suggestion</option>
+                    </select>
+                  </div>
+                  <a id="report-pr-link" class="btn btn-ghost btn-sm" href="#" target="_blank" rel="noopener">เปิด PR ↗</a>
                 </div>
               </header>
               <div id="findings-cards" class="findings-cards hidden"></div>
@@ -272,6 +351,6 @@
     </nav>
 
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
-    <script src="/app.js"></script>
+    <script src="/app.js?v=4"></script>
   </body>
 </html>

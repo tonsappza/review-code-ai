@@ -1,188 +1,192 @@
 # review-code-ai
 
-AI-powered **GitHub Pull Request** reviews using the [Cursor SDK](https://cursor.com/docs/sdk/typescript). Reviews are saved as **reports in this repo** under `reports/` — not as long comments on the PR (unless you opt in).
+AI **Pull Request review** ด้วย [Cursor SDK](https://cursor.com/docs/sdk/typescript) — รันบนเครื่องคุณ เก็บผลเป็น report ใน `reports/` (ไม่ spam ความยาวบน PR โดยค่าเริ่มต้น)
 
-## Features
+---
 
-- **Review modes:** `explore` (repo + diff) or `diff` (diff only) — set `REVIEW_MODE`
-- **Structured findings** parsed to JSON (`pr-N.json`) with verdict `pass` / `warn` / `fail`
-- **Inline PR comments** on GitHub for findings with file + line (`POST_INLINE_COMMENTS`)
-- **Local UI** with live log stream (SSE), PR picker, severity filter
-- **Chunked review** for large PRs (per-file passes)
-- **Incremental review** vs previous report in `reports/`
-- Reports stored at `reports/{owner}/{repo}/pr-{n}.md` + `reports/index.json`
-- Dashboard: open [`reports/index.html`](reports/index.html) (GitHub Pages or local)
-- Review PRs from **other repos** via `repository_dispatch` — reports still land here
-- Optional short link comment on the target PR
-- Structured review: Summary, Findings (severity), Test plan
+## เริ่มใช้บนเครื่อง (แนะนำ)
 
-## Where to read reports
+### สิ่งที่ต้องมี
 
-| Location | How |
-|----------|-----|
-| **This repo** | Browse [`reports/`](reports/) on GitHub |
-| **Dashboard** | `reports/index.html` + `index.json` |
-| **Per PR** | `reports/owner/repo/pr-42.md` |
+| รายการ | หมายเหตุ |
+|--------|----------|
+| **Node.js 20+** | `node -v` |
+| **Cursor API key** | [Dashboard → Integrations](https://cursor.com/dashboard/integrations) |
+| **GitHub** | `gh auth login` หรือใส่ `GITHUB_TOKEN` ใน `.env` (อ่าน PR / clone repo อื่น) |
 
-Example after a review:  
-`https://github.com/tonsappza/review-code-ai/tree/master/reports`
-
-## Local-first (แนะนำ)
-
-ใช้เครื่องตัวเองเป็นหลัก — ไม่ต้องสร้าง GitHub App
-
-| วิธี | คำสั่ง |
-|------|--------|
-| **UI** (เลือก PR, log สด) | `npm run ui` → http://127.0.0.1:3847 (หรือ `UI_PORT`) |
-| **สคริปต์** | `npm run review:local` (อ่าน `.env`: `TARGET_REPOSITORY`, `PR_NUMBER`) |
-| **CLI** | `npm run review` |
-
-ตั้ง `.env` จาก [`.env.example`](.env.example) — `CURSOR_API_KEY` + `gh auth login` (หรือ `GITHUB_TOKEN`) มักพอ
-
-รายละเอียด: [Local development](#local-development-real-pr) ด้านล่าง
-
-## Quick start (this hub repo)
-
-### 1. Secrets
-
-| Secret | Purpose |
-|--------|---------|
-| `CURSOR_API_KEY` | Cursor API key |
-| `REVIEW_GITHUB_TOKEN` | (optional) PAT with `repo` scope to checkout & read PRs in **other** repos |
-
-### 2. PR in this repo
-
-Workflow `.github/workflows/pr-review.yml` runs on PRs here, writes a report, and commits it to `reports/`.
-
-### 3. PRs in other repos (central hub)
-
-In the **target repo**, add a thin workflow that dispatches to this repo:
-
-```yaml
-# .github/workflows/trigger-ai-review.yml (in repo ที่ถูก review)
-name: Trigger AI review
-on:
-  pull_request:
-    types: [opened, synchronize, reopened]
-
-jobs:
-  dispatch:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: peter-evans/repository-dispatch@v3
-        with:
-          token: ${{ secrets.REVIEW_DISPATCH_TOKEN }}
-          repository: tonsappza/review-code-ai
-          event-type: review-pr
-          client-payload: |
-            {
-              "owner": "${{ github.repository_owner }}",
-              "repo": "${{ github.event.repository.name }}",
-              "pr": ${{ github.event.pull_request.number }},
-              "ref": "${{ github.event.pull_request.head.sha }}",
-              "post_pr_link": true
-            }
-```
-
-Create `REVIEW_DISPATCH_TOKEN` — a PAT that can trigger workflows on `tonsappza/review-code-ai`.
-
-This repo runs `.github/workflows/review-dispatch.yml`, saves the report under `reports/`, pushes to `master`, and optionally posts a **link only** on the target PR.
-
-```mermaid
-flowchart LR
-  PR[PR ใน repo B] --> D[dispatch]
-  D --> HUB[review-code-ai workflow]
-  HUB --> R[reports/owner/repo/pr-N.md]
-  HUB -. optional .-> L[ลิงก์สั้นบน PR B]
-```
-
-## Local development (real PR)
-
-ใช้ PR จริงจาก GitHub API — ไม่ต้องเปิด PR ใน repo นี้
-
-### 1. ตั้ง `.env`
-
-```env
-CURSOR_API_KEY=cursor_...
-TARGET_REPOSITORY=owner/repo
-PR_NUMBER=42
-POST_PR_COMMENT=false
-POST_PR_LINK=false
-```
-
-`GITHUB_TOKEN` ไม่ต้องใส่ถ้ามี `gh auth login` แล้ว (สคริปต์ใช้ `gh auth token` อัตโนมัติ)
-
-### 2. รัน
+### 1. ติดตั้ง
 
 ```powershell
-npm run review:local
+git clone https://github.com/tonsappza/review-code-ai.git
+cd review-code-ai
+npm install
 ```
 
-สคริปต์จะ clone branch ของ PR ไปที่ `.review-target/` แล้วรัน Cursor review → บันทึกที่ `reports/owner/repo/pr-N.md`
+### 2. ตั้งค่า `.env`
 
-### 3. ดูผล
+```powershell
+copy .env.example .env
+```
 
-- เปิดไฟล์ markdown ใน `reports/`
-- หรือ `npx serve reports` แล้วเปิด `index.html`
+แก้อย่างน้อย 3 ค่านี้:
 
-### Local UI (แนะนำสำหรับทดสอบ)
+```env
+CURSOR_API_KEY=cursor_xxx
+TARGET_REPOSITORY=Tech-Merch/big-data-api
+PR_NUMBER=24
+UI_PORT=4000
+REVIEW_MODE=explore
+```
+
+> ไม่ต้อง commit ไฟล์ `.env` — มีแค่ในเครื่องคุณ
+
+### 3. เปิด Local UI
 
 ```powershell
 npm run ui
 ```
 
-เปิดเบราว์เซอร์ที่ **http://127.0.0.1:3847** — กรอก `owner/repo` + เลข PR กด Review ดู log สด และเปิด report ใน panel ขวา (อ่านค่าเริ่มต้นจาก `.env`)
+เปิดเบราว์เซอร์: **http://127.0.0.1:4000** (ตาม `UI_PORT`)
 
-พอร์ตอื่น: `$env:UI_PORT="4000"; npm run ui`
+### 4. รัน review
 
-### รันแบบ manual
+1. เลือก **Repository**:
+   - **จาก GitHub** — กด **โหลด** → เลือก repo จากบัญชีที่ login (`gh auth` / `GITHUB_TOKEN`)
+   - **พิมพ์เอง** — ใส่ `owner/repo` ตรงๆ
+2. เลือกวิธีระบุ PR:
+   - **ใส่เลข PR** — พิมพ์เลขเอง (เช่น `24`)
+   - **โหลดจาก GitHub** — เลือกสถานะ (open/ทั้งหมด) → กด **โหลด** → เลือกจาก dropdown
+3. กด **เริ่ม Review** → ดู log สดใน panel ซ้าย
+4. เมื่อเสร็จ → แท็บ **Reports** (มือถือ: bottom nav) → เลือก report ดูรายละเอียด
 
-```bash
-npm install
-export CURSOR_API_KEY="cursor_..."
-export GITHUB_TOKEN="$(gh auth token)"
-export GITHUB_REPOSITORY="owner/repo"
-export PR_NUMBER="42"
+### 5. ดูผล
+
+| ที่ | ไฟล์ / หน้า |
+|-----|----------------|
+| ใน UI | แท็บ Reports → คลิกรายการ |
+| ในโฟลเดอร์ | `reports/owner/repo/pr-N.md` และ `pr-N.json` |
+| Dashboard | เปิด `reports/index.html` (หรือ `npx serve reports`) |
+
+```text
+reports/
+  Tech-Merch/big-data-api/
+    pr-24.md      ← สรุป review (markdown)
+    pr-24.json    ← findings + verdict (pass/warn/fail)
+  index.json      ← รายการสำหรับ UI (local เท่านั้น — ไม่ commit, สร้างจาก pr-*.json)
+```
+
+---
+
+## Local UI — สรุปหน้าจอ
+
+| ส่วน | ทำอะไร |
+|------|--------|
+| **Review** | ฟอร์มรัน review + log สด |
+| **Reports** | ประวัติ report ใน hub นี้ |
+| **ค้นหา report** (ด้านบน Reports) | หา report จากชื่อ repo / PR / verdict |
+| **ค้นหา repository** (ตอนโหลดจาก GitHub) | กรอง dropdown — จัดกลุ่มตาม **owner** |
+| **กรอง findings** (ใน report) | กรอง severity ของ issue ใน report นั้น (แสดงเมื่อมี findings) |
+| **เปิด PR ↗** | ลิงก์ไป PR บน GitHub |
+| **ปุ่มธีม** (มุมขวาบน) | สลับ Light / Dark |
+
+**ทิป:** ใช้ PR ที่ยัง **open** จะได้ผล review ที่ตรงกับงานปัจจุบัน; PR ที่ merge แล้วยัง review ได้แต่ใช้ทดสอบ / ดูประวัติ
+
+---
+
+## วิธีรันแบบอื่น (ไม่เปิด UI)
+
+### สคริปต์ (อ่าน `.env` อัตโนมัติ)
+
+```powershell
+npm run review:local
+```
+
+clone PR ไป `.review-target/` → review → บันทึก `reports/` → **ลบ `.review-target` อัตโนมัติ** (แม้ error) · ตั้ง `KEEP_REVIEW_TARGET=true` เฉพาะ debug
+
+### CLI ตรงๆ
+
+```powershell
+$env:CURSOR_API_KEY="cursor_..."
+$env:GITHUB_TOKEN="$(gh auth token)"
+$env:GITHUB_REPOSITORY="owner/repo"
+$env:PR_NUMBER="42"
 npm run review
 ```
 
-## Configuration
+---
 
-| Env / input | Default | Meaning |
-|-------------|---------|---------|
-| `REPORTS_DIR` | `./reports` | Report output directory |
-| `POST_PR_COMMENT` | `false` | Post full review on PR |
-| `POST_PR_LINK` | `false` | Post link to report on PR |
-| `TARGET_REPOSITORY` | `GITHUB_REPOSITORY` | `owner/repo` to review |
-| `REVIEW_CWD` | workspace | Path for Cursor agent checkout |
-| `KEEP_REVIEW_TARGET` | `false` | เก็บโฟลเดอร์ `.review-target` หลัง review (ค่าเริ่มต้นลบให้) |
-| `CHUNK_DIFF_THRESHOLD` | `45000` | ใช้ chunked review เมื่อ diff ใหญ่กว่านี้ |
-| `INCREMENTAL_REVIEW` | `false` | เปรียบเทียบกับ report เก่าของ PR เดียวกัน |
-| `REPORTS_HUB_REPO` | `tonsappza/review-code-ai` | Used in report URLs |
-| `REVIEW_MODE` | `explore` | `diff` or `explore` |
+## ตั้งค่าที่ใช้บ่อย (local)
 
-```bash
-npm test          # unit tests (parse findings, prompts)
-npm run ui        # local UI with PR picker + severity filter
+| ตัวแปร | ค่าเริ่มต้น | ความหมาย |
+|--------|-------------|----------|
+| `CURSOR_API_KEY` | — | **จำเป็น** |
+| `TARGET_REPOSITORY` | — | `owner/repo` ที่จะ review |
+| `PR_NUMBER` | — | เลข PR (สำหรับ `review:local` / ค่าเริ่มต้นใน UI) |
+| `UI_PORT` | `3847` | พอร์ต Local UI |
+| `REVIEW_MODE` | `explore` | `explore` = อ่าน repo + diff · `diff` = diff อย่างเดียว |
+| `REVIEW_MODEL` | (default SDK) | เช่น `composer-2.5` |
+| `POST_PR_LINK` | `false` | โพสต์ลิงก์ report สั้นๆ บน PR |
+| `POST_INLINE_COMMENTS` | `false` | inline comment บน GitHub (critical/major + มีบรรทัด) |
+| `INCREMENTAL_REVIEW` | `false` | เทียบกับ report ครั้งก่อนของ PR เดียวกัน |
+| `CHUNK_DIFF_THRESHOLD` | `45000` | PR ใหญ่ → review แยกตามไฟล์ |
+| `KEEP_REVIEW_TARGET` | `false` | เก็บโฟลเดอร์ `.review-target` หลัง review |
+
+ดูครบใน [`.env.example`](.env.example)
+
+---
+
+## แก้ปัญหาเบื้องต้น
+
+| อาการ | แนวทาง |
+|--------|--------|
+| UI ไม่ขึ้น / พอร์ตชน | เปลี่ยน `UI_PORT` แล้วรัน `npm run ui` ใหม่ |
+| โหลด PR ว่าง | ใส่ `owner/repo` ให้ถูก · เลือกสถานะ **ทั้งหมด** ถ้า PR merge แล้ว · รีสตาร์ท UI หลังแก้โค้ด |
+| `CURSOR_API_KEY missing` | ใส่ใน `.env` แล้ว restart `npm run ui` |
+| GitHub auth | `gh auth login` หรือ `GITHUB_TOKEN` ใน `.env` |
+| รายการ PR / report ไม่อัปเดต | Hard refresh เบราว์เซอร์ (Ctrl+Shift+R) |
+
+```powershell
+npm run typecheck
+npm test
 ```
 
-## Permissions
+---
 
-**Hub workflows** need `contents: write` to commit reports.
+## ฟีเจอร์ (ภาพรวม)
 
-**Dispatch token** needs access to trigger `review-code-ai` and (for `REVIEW_GITHUB_TOKEN`) read target repos.
+- Structured findings → `pr-N.json` + verdict `pass` / `warn` / `fail`
+- Chunked review สำหรับ PR ใหญ่
+- Incremental review เทียบ report เก่า
+- Review repo **อื่น** ได้จากเครื่องเดียว — report เก็บใน hub นี้
+- (ทางเลือก) โพสต์ลิงก์หรือ inline comments บน PR เป้าหมาย
 
-## GitHub App (optional — ทีหลัง)
+---
 
-เมื่อต้องการให้ **หลาย repo** review อัตโนมัติเมื่อเปิด PR (ไม่จำเป็นถ้าใช้ local / dispatch อยู่แล้ว)
+## ทางเลือก — CI / Hub / GitHub App
 
-คู่มือ: [docs/GITHUB_APP.md](docs/GITHUB_APP.md) — `npm run webhook` + ngrok
+> **ไม่จำเป็นถ้าใช้ local เป็นหลัก**
+
+### PR ใน repo นี้
+
+Workflow [`.github/workflows/pr-review.yml`](.github/workflows/pr-review.yml) — review PR ของ hub แล้ว commit เข้า `reports/`
+
+### PR ใน repo อื่น (repository_dispatch)
+
+ใส่ workflow บน repo เป้าหมาย → ยิงมาที่ `review-code-ai` → ดู [Quick start เดิมใน commit history](https://github.com/tonsappza/review-code-ai) หรือตัวอย่างใน `.github/workflows/review-dispatch.yml`
+
+ต้องมี secrets: `CURSOR_API_KEY`, `REVIEW_GITHUB_TOKEN`, `REVIEW_DISPATCH_TOKEN`
+
+### GitHub App (อัตโนมัติหลาย repo)
+
+คู่มือ: [docs/GITHUB_APP.md](docs/GITHUB_APP.md) — `npm run webhook` + tunnel (ngrok)
+
+---
 
 ## Security
 
-- Keep `CURSOR_API_KEY` in GitHub Secrets only
-- Diff content is sent to Cursor’s API for inference
-- Reports are committed to this repo — avoid secrets in PR diffs
+- อย่า commit `.env` หรือ API keys
+- เนื้อหา diff ถูกส่งไป Cursor API เพื่อ inference
+- อย่าใส่ secrets ใน PR ที่จะถูก review / commit ลง `reports/`
 
 ## License
 
