@@ -1,13 +1,13 @@
-# Reports
+# Reports (local only)
 
-AI review results are saved here instead of (or in addition to) long PR comments.
+ผล review เก็บที่นี่บนเครื่องคุณ — **ไม่ commit ขึ้น Git** (ดู `.gitignore`)
 
 ## Layout
 
 ```
 reports/
-  index.json      # local catalog (gitignored — per machine)
-  index.html      # open in browser (GitHub Pages or locally)
+  index.json      # catalog (สร้างอัตโนมัติ)
+  index.html      # dashboard (ไฟล์เดียวที่อยู่ใน repo)
   {owner}/
     {repo}/
       pr-{number}.md
@@ -16,8 +16,8 @@ reports/
 
 ## View reports
 
-- **GitHub:** browse `reports/` in this repo, or open `reports/index.html` via [GitHub Pages](https://pages.github.com/) if enabled.
-- **Local:** run a review, then open `reports/index.html` in a browser (needs a local server for `index.json`, or use `npx serve reports`).
+- **Local UI:** `npm run ui` → แท็บ Reports
+- **Browser:** `npx serve reports` แล้วเปิด `index.html`
 
 ## Environment
 

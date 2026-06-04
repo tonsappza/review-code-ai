@@ -59,6 +59,6 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add reports/
+          git add -f reports/
           git diff --staged --quiet || git commit -m "report: ${{ github.event.client_payload.owner }}/${{ github.event.client_payload.repo }}#${{ github.event.client_payload.pr }}"
           git push

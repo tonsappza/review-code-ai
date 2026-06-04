@@ -1,6 +1,6 @@
 # review-code-ai
 
-AI **Pull Request review** ด้วย [Cursor SDK](https://cursor.com/docs/sdk/typescript) — รันบนเครื่องคุณ เก็บผลเป็น report ใน `reports/` (ไม่ spam ความยาวบน PR โดยค่าเริ่มต้น)
+AI **Pull Request review** ด้วย [Cursor SDK](https://cursor.com/docs/sdk/typescript) — รันบนเครื่องคุณ เก็บผลใน `reports/` บนเครื่องคุณเท่านั้น (ไม่ commit ขึ้น Git)
 
 ---
 
@@ -64,8 +64,10 @@ npm run ui
 | ที่ | ไฟล์ / หน้า |
 |-----|----------------|
 | ใน UI | แท็บ Reports → คลิกรายการ |
-| ในโฟลเดอร์ | `reports/owner/repo/pr-N.md` และ `pr-N.json` |
-| Dashboard | เปิด `reports/index.html` (หรือ `npx serve reports`) |
+| ในโฟลเดอร์ | `reports/owner/repo/pr-N.md` และ `pr-N.json` (local) |
+| Dashboard | `npx serve reports` → `index.html` |
+
+> โฟลเดอร์ `reports/` ถูก **gitignore** — แต่ละเครื่องมี report ของตัวเอง ไม่ขึ้น `git push`
 
 ```text
 reports/
@@ -168,7 +170,7 @@ npm test
 
 ### PR ใน repo นี้
 
-Workflow [`.github/workflows/pr-review.yml`](.github/workflows/pr-review.yml) — review PR ของ hub แล้ว commit เข้า `reports/`
+Workflow [`.github/workflows/pr-review.yml`](.github/workflows/pr-review.yml) — review PR ของ hub (CI ใช้ `git add -f` ถ้าต้องการเก็บ report บน GitHub)
 
 ### PR ใน repo อื่น (repository_dispatch)
 
@@ -186,7 +188,7 @@ Workflow [`.github/workflows/pr-review.yml`](.github/workflows/pr-review.yml) �
 
 - อย่า commit `.env` หรือ API keys
 - เนื้อหา diff ถูกส่งไป Cursor API เพื่อ inference
-- อย่าใส่ secrets ใน PR ที่จะถูก review / commit ลง `reports/`
+- อย่าใส่ secrets ใน PR ที่จะถูก review — ไฟล์ใน `reports/` อยู่แค่เครื่องคุณ
 
 ## License
 

@@ -3,8 +3,10 @@ dist/
 .env
 .review-target/
 
-# Local catalog only (per-machine); UI rebuilds from report files
-reports/index.json
+# Reports output — local per machine (UI scans pr-*.json on disk)
+reports/**
+!reports/README.md
+!reports/index.html
 github-app.private-key.pem
 *.pem
 !public.pub
