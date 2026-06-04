@@ -1,0 +1,25 @@
+{
+  "name": "review-code-ai",
+  "version": "1.0.0",
+  "description": "AI-powered GitHub Pull Request reviews using the Cursor SDK",
+  "type": "module",
+  "scripts": {
+    "review": "tsx src/review-pr.ts",
+    "build": "tsc --noEmit",
+    "typecheck": "tsc --noEmit"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "@actions/core": "^1.11.1",
+    "@actions/github": "^6.0.1",
+    "@cursor/sdk": "^1.0.17",
+    "@octokit/rest": "^21.1.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.15.3",
+    "tsx": "^4.19.4",
+    "typescript": "^5.8.3"
+  }
+}
